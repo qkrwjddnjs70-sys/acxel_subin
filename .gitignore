@@ -1,0 +1,24 @@
+# 비밀정보·로컬 상태
+.secrets/
+.env
+.cache/
+
+# STT 가상환경
+.venv-stt/
+.venv/
+
+# 결과물(리포트·자막 데이터) — 로컬에만 둔다
+out/
+
+# 방송 영상·음성
+*.mp4
+*.mkv
+*.mov
+*.wav
+*.mp3
+*.m4a
+
+# 파이썬 부산물
+__pycache__/
+*.pyc
+.pytest_cache/

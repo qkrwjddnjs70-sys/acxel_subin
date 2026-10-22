@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="ko"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>홈쇼핑 가전 편성표</title>
+<style>
+  /* hsmoa-weekly.pages.dev 와 같은 스타일 + 주방 분류·선택·비교 */
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,'Malgun Gothic','Segoe UI',sans-serif;
+       margin:0; padding:16px 16px 84px; background:#f7f8fa; color:#222; font-size:13px}
+  h1{margin:0 0 4px; font-size:20px}
+  h1 a.alt{font-size:12px; font-weight:500; color:#1f4ec4; margin-left:10px; text-decoration:none}
+  .sub{color:#666; font-size:12px; margin-bottom:14px}
+  .sub .err{color:#e8332f}
+  .panel{background:#fff; border:1px solid #e5e7eb; border-radius:8px;
+         padding:12px 14px; margin-bottom:12px; display:flex; gap:18px;
+         align-items:center; flex-wrap:wrap}
+  .panel label{font-weight:600; margin-right:4px}
+  .filters button, .shop-btn{padding:6px 14px; border:1px solid #d0d4dc; background:#fff;
+                  border-radius:18px; cursor:pointer; font-size:13px;
+                  margin-right:6px; transition:all .15s}
+  .filters button:hover, .shop-btn:hover{border-color:#5b8def; color:#5b8def}
+  .filters button.active, .shop-btn.active{background:#1f4ec4; color:#fff; border-color:#1f4ec4}
+  .shop-btn .cnt{opacity:.6; font-size:11px; margin-left:3px}
+  .shop-btn.active .cnt{opacity:.85}
+  .grp-btn{padding:6px 14px; border:1px solid #c3a0e0; background:#fff;
+           color:#7b3fb5; border-radius:18px; cursor:pointer; font-size:13px;
+           margin-right:6px; font-weight:600; transition:all .15s}
+  .grp-btn:hover{background:#f3ebfb}
+  .grp-btn.active{background:#7b3fb5; color:#fff; border-color:#7b3fb5}
+  .grp-label{font-size:11px; font-weight:700; color:#888; width:52px;
+             padding-top:7px; flex:none}
+  .weeknav{background:#fff; border:1px solid #e5e7eb; border-radius:8px;
+           padding:10px 14px; margin-bottom:12px; display:flex;
+           align-items:center; gap:14px; justify-content:center}
+  .weeknav button{padding:7px 16px; border:1px solid #1f4ec4; background:#fff;
+                  color:#1f4ec4; border-radius:6px; cursor:pointer; font-size:13px;
+                  font-weight:600}
+  .weeknav button:hover:not(:disabled){background:#1f4ec4; color:#fff}
+  .weeknav button:disabled{opacity:.3; cursor:not-allowed}
+  .weeknav .wk-title{font-size:16px; font-weight:700; min-width:200px;
+                     text-align:center}
+  .weeknav .wk-title .badge-now{background:#e8332f; color:#fff; font-size:10px;
+            padding:2px 6px; border-radius:3px; margin-left:6px; vertical-align:middle}
+  .weeknav .today-btn{border-color:#888; color:#666}
+  .stats span{margin-right:14px}
+  .stats b{color:#1f4ec4}
+  .search{padding:6px 10px; border:1px solid #d0d4dc; border-radius:6px;
+          width:240px; font-size:13px}
+  .gridwrap{overflow-x:auto}
+  table{width:100%; min-width:900px; border-collapse:collapse; background:#fff;
+        border:1px solid #e5e7eb; border-radius:8px; overflow:hidden;
+        table-layout:fixed}
+  th{background:#f1f3f5; padding:10px 6px; font-size:12px; font-weight:700;
+     border-bottom:1px solid #e5e7eb; position:sticky; top:0; z-index:5}
+  th:first-child{width:64px}
+  th.is-today{background:#fdeceb; color:#e8332f;
+              border:2px solid #e8332f; border-bottom:2px solid #e8332f}
+  td{vertical-align:top; padding:0; border-bottom:1px solid #eef0f3;
+     border-right:1px solid #eef0f3}
+  td:last-child{border-right:none}
+  td.is-today{background:#fffafa; border-left:2px solid #e8332f;
+              border-right:2px solid #e8332f}
+  td.is-today.last-today{border-bottom:2px solid #e8332f}
+  .hour{background:#fafbfc; text-align:center; font-weight:700; color:#555;
+        width:64px; padding:8px 4px; border-right:2px solid #e5e7eb}
+  .cell{padding:4px 6px}
+  .item{display:block; position:relative; padding:6px 8px; margin:3px 0; border-radius:5px;
+        border:1px solid #eef0f3; font-size:12px; line-height:1.4;
+        word-break:keep-all; color:inherit; cursor:pointer; user-select:none}
+  .item:hover{filter:brightness(0.96); border-color:#9fb3d9}
+  .item.digital{background:#eaf2fd; border-color:#c8dcf5}
+  .item.rental{background:#eafaf2; border-color:#bce5d0}
+  .item.life{background:#fef8d8; border-color:#f3e29a}
+  .item.kitchen{background:#fdeee6; border-color:#f5c9b0}
+  .item .t{font-weight:700; color:#1f4ec4; margin-right:4px}
+  .item .s{color:#666; font-size:11px}
+  .item .title{margin-top:2px}
+  .item .ext{position:absolute; top:5px; right:6px; font-size:11px; color:#9aa3af;
+             text-decoration:none; display:none}
+  .item:hover .ext{display:block}
+  .item.sel{outline:2px solid #1f4ec4; outline-offset:-1px; box-shadow:0 2px 8px rgba(31,78,196,.25)}
+  .item.sel::after{content:'✓'; position:absolute; top:4px; right:6px; width:16px; height:16px;
+                   border-radius:50%; background:#1f4ec4; color:#fff; font-size:11px;
+                   text-align:center; line-height:16px}
+  .item.sel .ext{display:none}
+  .item.upcoming{cursor:default}
+  .item.upcoming .title{color:#555}
+  .perf{margin-top:4px; padding-top:4px; border-top:1px dashed #d1d5db;
+        display:flex; flex-wrap:wrap; gap:1px 10px;
+        font-size:11px; color:#0f3460; font-weight:700}
+  .perf > span{white-space:nowrap}
+  .perf .pv{color:#1f4ec4}
+  .perf .pl{color:#6b7280; font-weight:500; margin-right:2px}
+  .perf .muted{color:#9aa3af; font-weight:500}
+  .empty{color:#bbb; text-align:center; padding:32px; font-size:13px}
+  .badge{display:inline-block; padding:1px 5px; border-radius:3px;
+         font-size:10px; margin-right:3px; font-weight:600}
+  .badge.dig{background:#1f4ec4; color:#fff}
+  .badge.rent{background:#0d9488; color:#fff}
+  .badge.life{background:#ca8a04; color:#fff}
+  .badge.kit{background:#ea580c; color:#fff}
+  .badge.new{background:#e8332f; color:#fff}
+  .badge.soon{background:#e5e7eb; color:#6b7280}
+  .item.isnew{border-color:#f3b3b1; box-shadow:0 0 0 1px #f3b3b1 inset}
+  .newchk{display:flex; align-items:center; gap:4px; cursor:pointer;
+          font-weight:600; font-size:13px; user-select:none}
+  .newchk input{cursor:pointer; width:15px; height:15px}
+  .loading{color:#888; text-align:center; padding:48px}
+  /* 비교 바 */
+  .cmpbar{position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid #e5e7eb;
+          box-shadow:0 -4px 16px rgba(0,0,0,.06); padding:10px 16px; display:none;
+          align-items:center; gap:10px; z-index:20}
+  .cmpbar.on{display:flex}
+  .cmpbar .chips{display:flex; gap:6px; flex-wrap:wrap; flex:1; min-width:0}
+  .cmpbar .chip{background:#eef3fd; color:#1f4ec4; border-radius:14px; padding:4px 10px;
+                font-size:12px; white-space:nowrap; max-width:260px; overflow:hidden; text-overflow:ellipsis}
+  .cmpbar button{padding:8px 16px; border-radius:6px; font-size:13px; font-weight:700; cursor:pointer}
+  .cmpbar .go{background:#1f4ec4; color:#fff; border:1px solid #1f4ec4}
+  .cmpbar .go:disabled{opacity:.4; cursor:not-allowed}
+  .cmpbar .clear{background:#fff; color:#666; border:1px solid #d0d4dc}
+  @media (max-width:640px){ .search{width:100%} .weeknav{gap:6px} .weeknav .wk-title{min-width:0} }
+</style></head><body>
+
+<h1>📺 홈쇼핑 가전 편성표 <a class="alt" href="/">← 방송 비교(자막 업로드)</a></h1>
+<div class="sub" id="range">불러오는 중…</div>
+
+<div class="weeknav">
+  <button id="prev-week">◀ 지난주</button>
+  <span class="wk-title" id="wk-title"></span>
+  <button id="next-week">다음주 ▶</button>
+  <button id="today-week" class="today-btn">오늘</button>
+</div>
+
+<div class="panel filters">
+  <label>분류:</label>
+  <button class="filter-btn active" data-filter="all">전체</button>
+  <button class="filter-btn" data-filter="digital">💡 디가</button>
+  <button class="filter-btn" data-filter="rental">💧 렌탈</button>
+  <button class="filter-btn" data-filter="life">생가</button>
+  <button class="filter-btn" data-filter="kitchen">🍳 주방</button>
+  <span style="width:1px;height:20px;background:#d0d4dc;margin:0 4px"></span>
+  <label class="newchk"><input type="checkbox" id="newonly"><span class="badge new">NEW</span> 신상품만</label>
+  <span style="margin-left:auto"></span>
+  <input class="search" id="q" placeholder="🔍 상품명·홈쇼핑사 검색...">
+</div>
+
+<div class="panel" style="flex-direction:column; align-items:stretch; gap:8px">
+  <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+    <label>홈쇼핑사:</label>
+    <button class="shop-btn active" data-shop="__all__">전체</button>
+    <button class="grp-btn" data-group="live">📺 라이브 전체</button>
+    <button class="grp-btn" data-group="tcom">🛒 티커머스 전체</button>
+    <span style="color:#888; font-size:11px">(개별 클릭=토글 / 그룹 버튼=일괄선택)</span>
+  </div>
+  <div style="display:flex; gap:6px; align-items:flex-start">
+    <span class="grp-label">라이브</span>
+    <div id="chips-live" style="display:flex; flex-wrap:wrap; gap:6px; flex:1"></div>
+  </div>
+  <div style="display:flex; gap:6px; align-items:flex-start">
+    <span class="grp-label">티커머스</span>
+    <div id="chips-tcom" style="display:flex; flex-wrap:wrap; gap:6px; flex:1"></div>
+  </div>
+</div>
+
+<div class="panel stats" id="stats"></div>
+
+<div class="gridwrap"><table id="grid"><tbody><tr><td class="loading">편성표를 불러오는 중…</td></tr></tbody></table></div>
+
+<div class="cmpbar" id="cmpbar">
+  <b id="cmpcount"></b>
+  <div class="chips" id="cmpchips"></div>
+  <button class="clear" id="cmpclear">선택 해제</button>
+  <button class="go" id="cmpgo">선택한 방송 → 자막 붙여넣고 비교</button>
+</div>
+<form id="cmpForm" method="POST" action="/api/compare" target="_blank" style="display:none">
+  <input type="hidden" name="items" id="cmpItems">
+  <input type="hidden" name="keyword" id="cmpKeyword">
+</form>
+
+<script>
+const DAYS = ['일','월','화','수','목','금','토'];
+const CAT = {
+  digital: ['dig', '디가'], rental: ['rent', '렌탈'], life: ['life', '생가'], kitchen: ['kit', '주방'],
+};
+const state = { filter: 'all', q: '', shops: new Set(), newOnly: false, monday: null, data: null };
+const selected = new Map();   // key → item (주를 넘나들며 고를 수 있게 주 밖에 보관)
+
+function $(s){return document.querySelector(s)}
+function $$(s){return Array.from(document.querySelectorAll(s))}
+function escapeHtml(s){
+  return String(s ?? '').replace(/[&<>"']/g, c=>(
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
+  ));
+}
+function iso(d){ return d.toISOString().slice(0,10); }
+function mondayOf(d){
+  const x = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const wd = (x.getUTCDay() + 6) % 7; x.setUTCDate(x.getUTCDate() - wd); return x;
+}
+function addDays(isoStr, n){ const x = new Date(isoStr + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate()+n); return iso(x); }
+function md(isoStr){ return isoStr.slice(5).replace('-', '/'); }
+function dayLabel(isoStr){ const x = new Date(isoStr + 'T00:00:00Z'); return `${md(isoStr)}(${DAYS[x.getUTCDay()]})`; }
+function won(v){
+  if (v == null) return null;
+  if (v >= 1e8) return (v/1e8).toFixed(v >= 1e9 ? 1 : 2).replace(/\.?0+$/,'') + '억';
+  return Math.round(v/1e4).toLocaleString() + '만';
+}
+function keyOf(it){ return it.channel + '|' + it.start; }
+
+const TODAY_MONDAY = iso(mondayOf(new Date()));
+
+async function load(monday){
+  state.monday = monday;
+  $('#wk-title').innerHTML = `${md(monday)} ~ ${md(addDays(monday,6))}` +
+    (monday === TODAY_MONDAY ? '<span class="badge-now">이번주</span>' : '');
+  $('#next-week').disabled = monday >= addDays(TODAY_MONDAY, 7);  // 편성은 약 1주 앞까지만 나온다
+  $('#grid').innerHTML = '<tbody><tr><td class="loading">편성표를 불러오는 중… (처음 보는 주는 몇 초 걸립니다)</td></tr></tbody>';
+  $('#range').textContent = '불러오는 중…';
+  try {
+    const res = await fetch('/api/week?start=' + monday);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.status);
+    if (state.monday !== monday) return;   // 그사이 다른 주로 이동함
+    state.data = data;
+    buildShopChips();
+    const errs = data.errors.length
+      ? ` · <span class="err">일부 날짜 수집 실패 ${data.errors.length}일 (${escapeHtml(data.errors[0])})</span>` : '';
+    const u = data.usage || {};
+    const usage = u.hourly_budget ? ` · 최근 1시간 홈쇼핑모아 호출 ${u.calls_last_hour}/${u.hourly_budget}회` : '';
+    const newNote = data.new_basis_days ? '' : ' · NEW 표시는 지난주를 한 번 열어 둔 뒤부터 나옵니다';
+    const srcNote = data.source_note ? ` · ${escapeHtml(data.source_note)}` : '';
+    $('#range').innerHTML = `홈쇼핑모아 편성 기준${srcNote} · 가전·주방 ${data.items.length}건${usage}${newNote} · ` +
+      `카드를 눌러 2개 이상 고르면 비교 리포트를 만듭니다 · 매출=편성 추정 매출, 분당=분당주문액(매출÷가중분)${errs}`;
+    render();
+  } catch (e) {
+    $('#range').innerHTML = `<span class="err">불러오기 실패: ${escapeHtml(e.message)}</span>`;
+    $('#grid').innerHTML = `<tbody><tr><td class="empty">편성표를 불러오지 못했습니다.<br>${escapeHtml(e.message)}</td></tr></tbody>`;
+  }
+}
+
+function render() {
+  const data = state.data; if (!data) return;
+  const q = state.q.trim().toLowerCase();
+  const want = state.filter;
+  const shopFilter = state.shops.size > 0;
+
+  const visible = data.items.filter(it => {
+    if (want !== 'all' && it.cat !== want) return false;
+    if (state.newOnly && !it.new) return false;
+    if (shopFilter && !state.shops.has(it.shop)) return false;
+    if (q && !(it.title + ' ' + it.shop).toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  const n = c => visible.filter(x => x.cat === c).length;
+  $('#stats').innerHTML =
+    `<span>이 주 표시: <b>${visible.length}</b>건</span>` +
+    `<span>💡 디가 <b>${n('digital')}</b></span>` +
+    `<span>💧 렌탈 <b>${n('rental')}</b></span>` +
+    `<span>생가 <b>${n('life')}</b></span>` +
+    `<span>🍳 주방 <b>${n('kitchen')}</b></span>` +
+    `<span><span class="badge new">NEW</span> <b>${visible.filter(x=>x.new).length}</b></span>` +
+    `<span style="margin-left:auto; color:#888">전체 ${data.items.length}건</span>`;
+
+  const dates = data.dates;
+  const byHourDate = {};
+  for (let h = 0; h < 24; h++){ byHourDate[h] = {}; for (const d of dates) byHourDate[h][d] = []; }
+  for (const it of visible) if (byHourDate[it.hour] && byHourDate[it.hour][it.date]) byHourDate[it.hour][it.date].push(it);
+  const activeHours = [...Array(24).keys()].filter(h => dates.some(d => byHourDate[h][d].length));
+
+  let html = '<thead><tr><th>시간</th>';
+  for (const d of dates) html += `<th${d === data.today ? ' class="is-today"' : ''}>${dayLabel(d)}</th>`;
+  html += '</tr></thead><tbody>';
+  if (!activeHours.length) {
+    html += `<tr><td colspan="8" class="empty">이 주에 표시할 방송이 없습니다 (데이터 미수집 또는 필터 결과 없음)</td></tr>`;
+  } else {
+    const lastH = activeHours[activeHours.length - 1];
+    for (const h of activeHours) {
+      html += `<tr><td class="hour">${String(h).padStart(2,'0')}시</td>`;
+      for (const d of dates) {
+        const arr = byHourDate[h][d].sort((a,b)=>a.time.localeCompare(b.time));
+        let tdcls = '';
+        if (d === data.today) tdcls = h === lastH ? ' class="is-today last-today"' : ' class="is-today"';
+        html += `<td${tdcls}><div class="cell">`;
+        for (const it of arr) {
+          const [bcls, blabel] = CAT[it.cat];
+          const k = keyOf(it);
+          let cls = 'item ' + it.cat + (it.new ? ' isnew' : '') + (selected.has(k) ? ' sel' : '') + (it.upcoming ? ' upcoming' : '');
+          const rev = won(it.revenue), rp = won(it.rpwm);
+          const wm = it.weighted_min != null ? it.weighted_min.toFixed(1) + '분' : '–';
+          const won1 = v => v == null ? null : Number(v).toLocaleString() + '원';
+          const cardTxt = (it.card_discounts || []).map(c => c.card).filter(Boolean).slice(0, 3).join('·');
+          const priceSpan = it.sale_price != null
+            ? `<span><span class="pl">가격</span><span class="pv">${won1(it.sale_price)}</span>${it.sale_rate ? `<span class="muted"> (${it.sale_rate}%↓)</span>` : ''}</span>`
+            : '';
+          const cardSpan = cardTxt ? `<span><span class="pl">카드</span><span class="pv">${escapeHtml(cardTxt)} ${won1((it.card_discounts[0]||{}).amount) || ''}</span></span>` : '';
+          const perf = rev
+            ? `<div class="perf" title="편성 ${it.duration_min}분 · 분당주문액 = 매출 ÷ 가중분">
+              <span><span class="pl">매출</span><span class="pv">${rev}</span></span>
+              <span><span class="pl">가중분</span><span class="pv">${wm}</span></span>
+              <span><span class="pl">분당</span><span class="${rp ? 'pv' : 'muted'}">${rp ?? '–'}</span></span>
+            </div>`
+            : `<div class="perf" title="편성 ${it.duration_min}분${it.duration_known === false ? '(60분 가정)' : ''}">
+              ${priceSpan}${cardSpan}<span><span class="pl">가중분</span><span class="pv">${wm}</span></span>
+            </div>`;
+          html += `<div class="${cls}" data-k="${escapeHtml(k)}" title="${it.upcoming ? '방영 전 — 비교할 수 없습니다' : '클릭해서 비교 대상으로 선택'}">
+            <a class="ext" href="${escapeHtml(it.link)}" target="_blank" rel="noopener noreferrer" title="홈쇼핑모아에서 보기">↗</a>
+            <span class="t">${it.time}</span>${it.new ? '<span class="badge new">NEW</span>' : ''}<span class="badge ${bcls}">${blabel}</span>${it.upcoming ? '<span class="badge soon">예정</span>' : ''}<span class="s">${escapeHtml(it.shop)}</span>
+            <div class="title">${escapeHtml(it.title)}</div>
+            ${perf}
+          </div>`;
+        }
+        html += '</div></td>';
+      }
+      html += '</tr>';
+    }
+  }
+  html += '</tbody>';
+  $('#grid').innerHTML = html;
+}
+
+// ── 카드 선택 → 비교 ──
+const byKey = () => new Map((state.data?.items || []).map(it => [keyOf(it), it]));
+$('#grid').addEventListener('click', e => {
+  if (e.target.closest('a.ext')) return;
+  const el = e.target.closest('.item'); if (!el) return;
+  const it = byKey().get(el.dataset.k); if (!it || it.upcoming) return;
+  const k = keyOf(it);
+  if (selected.has(k)) selected.delete(k); else selected.set(k, it);
+  el.classList.toggle('sel', selected.has(k));
+  updateCmpBar();
+});
+function updateCmpBar(){
+  const n = selected.size;
+  $('#cmpbar').classList.toggle('on', n > 0);
+  $('#cmpcount').textContent = n + '개 선택';
+  $('#cmpgo').disabled = n < 2;
+  $('#cmpchips').innerHTML = [...selected.values()].map(it =>
+    `<span class="chip" title="${escapeHtml(it.title)}">${md(it.date)} ${it.time} ${escapeHtml(it.shop)} · ${escapeHtml(it.title)}</span>`).join('');
+}
+$('#cmpclear').addEventListener('click', () => { selected.clear(); updateCmpBar(); render(); });
+$('#cmpgo').addEventListener('click', () => {
+  const picked = [...selected.values()].map(it => ({
+    channel: it.channel, start: it.start.slice(0, 16), duration: it.duration_min,
+    price: it.sale_price ?? it.price ?? null, product: it.title, label: `${it.shop} ${md(it.date)} ${it.time}`,
+  }));
+  if (picked.length < 2) return;
+  // 홈쇼핑모아에서 자막을 직접 받을 수 없으니, 방송 정보를 채운 채로 '방송 비교' 화면에 넘겨 자막만 붙여넣게 한다
+  window.open('/?prefill=' + encodeURIComponent(JSON.stringify(picked)), '_blank');
+});
+
+// ── 주 네비게이션 ──
+$('#prev-week').addEventListener('click', ()=> load(addDays(state.monday, -7)));
+$('#next-week').addEventListener('click', ()=> load(addDays(state.monday, 7)));
+$('#today-week').addEventListener('click', ()=> load(TODAY_MONDAY));
+
+// ── 분류/검색/NEW ──
+$$('.filter-btn').forEach(b => b.addEventListener('click', ()=>{
+  $$('.filter-btn').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  state.filter = b.dataset.filter;
+  render();
+}));
+$('#q').addEventListener('input', e => { state.q = e.target.value; render(); });
+$('#newonly').addEventListener('change', e => { state.newOnly = e.target.checked; render(); });
+
+// ── 홈쇼핑사 칩 (주마다 건수가 달라 다시 그린다) ──
+const GROUP_SHOPS = {live: [], tcom: []};
+function buildShopChips(){
+  GROUP_SHOPS.live = []; GROUP_SHOPS.tcom = [];
+  $('#chips-live').innerHTML = ''; $('#chips-tcom').innerHTML = '';
+  for (const s of state.data.shops) {
+    GROUP_SHOPS[s.group].push(s.name);
+    const btn = document.createElement('button');
+    btn.className = 'shop-btn';
+    btn.dataset.shop = s.name;
+    btn.innerHTML = `${escapeHtml(s.name)}<span class="cnt">${s.count}</span>`;
+    btn.addEventListener('click', () => {
+      if (state.shops.has(s.name)) state.shops.delete(s.name); else state.shops.add(s.name);
+      updateShopUI(); render();
+    });
+    (s.group === 'live' ? $('#chips-live') : $('#chips-tcom')).appendChild(btn);
+  }
+  updateShopUI();
+}
+function updateShopUI() {
+  $$('.shop-btn').forEach(b => {
+    const v = b.dataset.shop;
+    if (v === '__all__') b.classList.toggle('active', state.shops.size === 0);
+    else b.classList.toggle('active', state.shops.has(v));
+  });
+  for (const g of ['live','tcom']) {
+    const all = GROUP_SHOPS[g];
+    const on = all.length > 0 && all.every(s => state.shops.has(s));
+    document.querySelector(`.grp-btn[data-group="${g}"]`).classList.toggle('active', on);
+  }
+}
+document.querySelector('.shop-btn[data-shop="__all__"]').addEventListener('click', () => {
+  state.shops.clear(); updateShopUI(); render();
+});
+$$('.grp-btn').forEach(b => b.addEventListener('click', ()=>{
+  const all = GROUP_SHOPS[b.dataset.group];
+  const allOn = all.every(s => state.shops.has(s));
+  if (allOn) all.forEach(s => state.shops.delete(s)); else all.forEach(s => state.shops.add(s));
+  updateShopUI(); render();
+}));
+
+load(TODAY_MONDAY);
+</script>
+</body></html>

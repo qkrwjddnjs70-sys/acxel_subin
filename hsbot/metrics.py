@@ -1,0 +1,349 @@
+"""방송 1회분을 숫자로 환산하는 엔진.
+
+설계 원칙
+---------
+1. 방송 길이가 다르면 총량 비교는 무의미하다 → 모든 지표는 '분당(per-minute)'으로 정규화한다.
+2. 축(axis)은 상호배타적이지 않다. 한 문장이 가격+긴급을 동시에 자극할 수 있고,
+   그게 실제 판매 화법이므로 중복 카운트를 허용한다.
+3. '얼마나 말했나'(강도)와 '언제 말했나'(구성)를 분리해서 잰다.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field, asdict
+from typing import Any
+
+from .lexicon import Lexicon
+from .models import Broadcast
+from . import textutil as tu
+from .time_weight import weighted_minutes_from_iso
+from .conditions import extract as extract_conditions
+
+DEFAULT_BUCKET_SEC = 300  # 타임라인 기본 5분 단위
+
+
+@dataclass
+class AxisMetric:
+    key: str
+    label: str
+    color: str
+    hits: int = 0                  # 키워드 매칭 총 횟수(가중치 반영 전, 순수 횟수)
+    hits_per_min: float = 0.0      # 분당 매칭(강도). 소스가 그 분을 강조(판촉강도%)로
+                                    # 태깅했으면 그만큼 가산해서 계산한다(아래 analyze 참고)
+    hits_per_min_raw: float = 0.0  # 판촉강도 가산 없이 순수 횟수만으로 잰 분당 매칭(토글용)
+    segment_coverage: float = 0.0  # 이 축을 건드린 자막 줄의 비율 (0~1)
+    first_hit_sec: float | None = None   # 처음 꺼낸 시점
+    peak_bucket_idx: int | None = None   # 가장 집중된 구간
+    peak_bucket_hits: int = 0
+    top_terms: list[tuple[str, int]] = field(default_factory=list)
+    example_lines: list[dict[str, Any]] = field(default_factory=list)  # {"t": sec, "text": ..., "terms": [...]}
+
+
+@dataclass
+class NumericMetric:
+    """숫자 소구(가격/할인율/할부) 분석."""
+
+    price_mentions: int = 0
+    distinct_prices: list[int] = field(default_factory=list)
+    lowest_price: int | None = None
+    highest_price: int | None = None
+    price_mentions_per_min: float = 0.0
+    first_price_sec: float | None = None
+    percent_mentions: int = 0
+    max_percent: float | None = None
+    installment_mentions: int = 0
+    max_installment_months: int | None = None
+
+
+@dataclass
+class RhythmMinute:
+    """1분 단위 '방송 리듬' — 소스가 자체 태깅한 강조(kinds)와
+    우리 축(키워드) 분석을 나란히 놓아, 키워드만으론 못 잡는 강조를 드러낸다."""
+
+    m: int
+    t_sec: int
+    chars: int = 0
+    n_segments: int = 0
+    top_axis: str | None = None
+    top_axis_hits: int = 0
+    axis_hits: dict[str, int] = field(default_factory=dict)
+    native_segs: int | None = None    # 소스가 준 발화량(있으면)
+    native_promo: int | None = None   # 소스가 판촉으로 태깅한 줄 수
+    native_pct: float | None = None   # 소스 자체 판촉 강도(%)
+    native_quiet: bool = False
+    host_emphasized: bool = False     # 소스가 뭔가(kinds)를 강조 태깅한 분
+    unmatched: bool = False           # 강조는 있는데 우리 축 키워드가 하나도 못 잡음 ← 우리 약점
+    lines: list[dict[str, Any]] = field(default_factory=list)  # {"t","text","kinds"}
+
+
+@dataclass
+class BroadcastMetrics:
+    broadcast_id: str
+    channel: str
+    channel_name: str
+    product_name: str
+    start_datetime: str
+    duration_min: float
+    n_segments: int
+    n_chars: int
+    chars_per_min: float
+    segments_per_min: float
+    avg_chars_per_segment: float
+    type_token_ratio: float
+    repetition_index: float
+    axes: dict[str, AxisMetric]
+    numeric: NumericMetric
+    bucket_sec: int
+    timeline: list[dict[str, Any]]
+    top_keywords: list[tuple[str, int]]
+    rhythm: list[RhythmMinute] = field(default_factory=list)
+    has_native_rhythm: bool = False
+    revenue: int | None = None       # 편성합산 추정 매출(원). 소스가 없거나 집계 전이면 None.
+    sales_count: int | None = None
+    weighted_minutes: float | None = None       # 시간대 가중치를 합산한 '가중 분'
+    revenue_per_weighted_min: float | None = None
+    conditions: dict[str, Any] = field(default_factory=dict)  # 멘트에서 뽑은 방송 조건(conditions.extract)  # 가중 분당 추정 매출(원) — 시간대 보정된 효율
+
+    def axis_vector(self, keys: list[str] | None = None) -> dict[str, float]:
+        """채널 간 비교에 쓰는 분당 강도 벡터."""
+        keys = keys or list(self.axes)
+        return {k: self.axes[k].hits_per_min for k in keys if k in self.axes}
+
+    def to_dict(self) -> dict[str, Any]:
+        d = asdict(self)
+        d["axes"] = {k: asdict(v) for k, v in self.axes.items()}
+        d["numeric"] = asdict(self.numeric)
+        return d
+
+
+def _bucket_count(duration_sec: float, bucket_sec: int) -> int:
+    return max(1, int((duration_sec + bucket_sec - 1) // bucket_sec))
+
+
+def _native_by_minute(native_timeline: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+    """소스가 준 분 단위 타임라인을 분 인덱스로 바로 찾을 수 있게 바꾼다.
+
+    축 집계(가중치 반영)와 `_compute_rhythm` 둘 다 같은 분→타임라인행 lookup이
+    필요해서 analyze()에서 한 번만 만들어 공유한다.
+    """
+    return {int(row.get("m", -1)): row for row in native_timeline if isinstance(row, dict)}
+
+
+def _compute_rhythm(
+    segs: list, lex: Lexicon, native: dict[int, dict[str, Any]], duration_sec: float
+) -> tuple[list[RhythmMinute], bool]:
+    """분 단위 '방송 리듬'. 우리 축 매칭과 소스 자체 태깅(kinds/timeline)을 나란히 놓는다.
+
+    호스트가 강조했다는 신호(kinds 태깅 또는 소스의 promo 카운트)가 있는데
+    우리 축 키워드는 하나도 걸리지 않은 분을 `unmatched`로 표시한다 —
+    '언어적 멘트만 읽는다'는 한계를 정량적으로 드러내는 지점이다.
+    """
+    n_minutes = max(1, int(duration_sec // 60) + 1)
+    if native:
+        n_minutes = max(n_minutes, max(native) + 1)
+
+    by_minute: list[list] = [[] for _ in range(n_minutes)]
+    for s in segs:
+        mi = min(int(s.start_sec // 60), n_minutes - 1)
+        by_minute[mi].append(s)
+
+    out: list[RhythmMinute] = []
+    for i in range(n_minutes):
+        bucket = by_minute[i]
+        axis_hits: dict[str, int] = {}
+        for ax in lex:
+            n = sum(len(lex.hits(ax.key, s.text)) for s in bucket)
+            if n:
+                axis_hits[ax.key] = n
+        top_axis, top_hits = max(axis_hits.items(), key=lambda kv: kv[1], default=(None, 0))
+        host_emphasized = any(s.kinds for s in bucket)
+        row = native.get(i)
+        lines = [
+            {"t": s.start_sec, "text": s.text, "kinds": list(s.kinds)}
+            for s in bucket
+            if s.kinds or lex_hits(lex, s.text)
+        ][:8] or [{"t": s.start_sec, "text": s.text, "kinds": list(s.kinds)} for s in bucket[:8]]
+        out.append(
+            RhythmMinute(
+                m=i,
+                t_sec=i * 60,
+                chars=sum(s.n_chars for s in bucket),
+                n_segments=len(bucket),
+                top_axis=top_axis,
+                top_axis_hits=top_hits,
+                axis_hits=axis_hits,
+                native_segs=row.get("segs") if row else None,
+                native_promo=row.get("promo") if row else None,
+                native_pct=row.get("pct") if row else None,
+                native_quiet=bool(row.get("quiet")) if row else False,
+                host_emphasized=host_emphasized,
+                unmatched=host_emphasized and not axis_hits,
+                lines=lines,
+            )
+        )
+    return out, bool(native)
+
+
+def lex_hits(lex: Lexicon, text: str) -> bool:
+    return any(lex.hits(ax.key, text) for ax in lex)
+
+
+def analyze(
+    bc: Broadcast,
+    lex: Lexicon,
+    *,
+    bucket_sec: int = DEFAULT_BUCKET_SEC,
+    top_n: int = 25,
+) -> BroadcastMetrics:
+    segs = bc.sorted_segments()
+    dur_min = max(bc.duration_min, 1e-9)
+    n_buckets = _bucket_count(bc.duration_sec, bucket_sec)
+
+    # ---------- 발화량 ----------
+    n_chars = sum(s.n_chars for s in segs)
+    counts = tu.token_counts(bc.full_text, use_bigrams=False)
+    total_tok = sum(counts.values())
+    ttr = (len(counts) / total_tok) if total_tok else 0.0
+    # 반복지수: 상위 20개 토큰이 전체에서 차지하는 비중. 높을수록 같은 말을 반복.
+    rep = (sum(c for _, c in counts.most_common(20)) / total_tok) if total_tok else 0.0
+
+    # ---------- 축별 집계 ----------
+    # 소스가 준 분당 판촉강도(%)를 '멘트 하나의 무게'에 반영한다 — 똑같이 한 번
+    # 말해도, 호스트가 그 분에 실제로 강조하고 있던 멘트라면 더 쳐준다(가산점만,
+    # 감점은 없음: 데이터 없는 분/방송은 1.0배 그대로).
+    native_by_minute = _native_by_minute(bc.extra.get("rhythm_timeline", []))
+
+    def _emphasis(start_sec: float) -> tuple[float, float | None]:
+        """(가중치, 그 가중치의 근거인 판촉강도%) — %가 없으면 (1.0, None)."""
+        row = native_by_minute.get(int(start_sec // 60))
+        pct = row.get("pct") if row else None
+        if not isinstance(pct, (int, float)):
+            return 1.0, None
+        return 1.0 + (pct / 100.0), pct
+
+    axis_metrics: dict[str, AxisMetric] = {}
+    axis_bucket_hits: dict[str, list[int]] = {}
+    for ax in lex:
+        hits_total = 0
+        weighted_total = 0.0
+        seg_with_hit = 0
+        first_sec: float | None = None
+        buckets = [0] * n_buckets
+        term_counts: dict[str, int] = {}
+        examples: list[dict[str, Any]] = []
+        for s in segs:
+            h = lex.hits(ax.key, s.text)
+            if not h:
+                continue
+            boost, boost_pct = _emphasis(s.start_sec)
+            hits_total += len(h)
+            weighted_total += len(h) * boost
+            seg_with_hit += 1
+            if first_sec is None:
+                first_sec = s.start_sec
+            bi = min(int(s.start_sec // bucket_sec), n_buckets - 1)
+            buckets[bi] += len(h)
+            for term in h:
+                term_counts[term] = term_counts.get(term, 0) + 1
+            if len(examples) < 30:
+                examples.append({
+                    "t": s.start_sec, "text": s.text, "terms": sorted(set(h)),
+                    "boost": round(boost, 2), "boost_pct": boost_pct,
+                })
+        peak_idx = max(range(n_buckets), key=lambda i: buckets[i]) if hits_total else None
+        axis_metrics[ax.key] = AxisMetric(
+            key=ax.key,
+            label=ax.label,
+            color=ax.color,
+            hits=hits_total,
+            hits_per_min=round(weighted_total / dur_min, 3),
+            hits_per_min_raw=round(hits_total / dur_min, 3),
+            segment_coverage=round(seg_with_hit / len(segs), 4) if segs else 0.0,
+            first_hit_sec=first_sec,
+            peak_bucket_idx=peak_idx,
+            peak_bucket_hits=buckets[peak_idx] if peak_idx is not None else 0,
+            top_terms=sorted(term_counts.items(), key=lambda kv: -kv[1])[:8],
+            example_lines=examples,
+        )
+        axis_bucket_hits[ax.key] = buckets
+
+    # ---------- 숫자 소구 ----------
+    num = NumericMetric()
+    prices: list[int] = []
+    for s in segs:
+        p = tu.extract_prices(s.text)
+        if p:
+            prices.extend(p)
+            num.price_mentions += len(p)
+            if num.first_price_sec is None:
+                num.first_price_sec = s.start_sec
+        pct = tu.extract_percents(s.text)
+        if pct:
+            num.percent_mentions += len(pct)
+            num.max_percent = max(num.max_percent or 0.0, max(pct))
+        mon = tu.extract_months(s.text)
+        if mon:
+            num.installment_mentions += len(mon)
+            num.max_installment_months = max(num.max_installment_months or 0, max(mon))
+    if prices:
+        num.distinct_prices = sorted(set(prices))
+        num.lowest_price = min(prices)
+        num.highest_price = max(prices)
+    num.price_mentions_per_min = round(num.price_mentions / dur_min, 3)
+
+    # ---------- 타임라인 ----------
+    bucket_chars = [0] * n_buckets
+    bucket_segs = [0] * n_buckets
+    for s in segs:
+        bi = min(int(s.start_sec // bucket_sec), n_buckets - 1)
+        bucket_chars[bi] += s.n_chars
+        bucket_segs[bi] += 1
+    bmin = bucket_sec / 60.0
+    timeline = [
+        {
+            "idx": i,
+            "start_sec": i * bucket_sec,
+            "label": f"{i * bucket_sec // 60}~{min((i + 1) * bucket_sec // 60, int(bc.duration_sec // 60))}분",
+            "chars_per_min": round(bucket_chars[i] / bmin, 1),
+            "segments": bucket_segs[i],
+            "axes": {k: round(v[i] / bmin, 3) for k, v in axis_bucket_hits.items()},
+        }
+        for i in range(n_buckets)
+    ]
+
+    rhythm, has_native_rhythm = _compute_rhythm(segs, lex, native_by_minute, bc.duration_sec)
+
+    wmin = weighted_minutes_from_iso(bc.start_datetime, bc.end_datetime, bc.channel)
+    revenue = bc.extra.get("revenue")
+    revenue_per_wmin = (revenue / wmin) if revenue is not None and wmin and wmin > 0 else None
+
+    return BroadcastMetrics(
+        broadcast_id=bc.broadcast_id,
+        channel=bc.channel,
+        channel_name=bc.display_channel,
+        product_name=bc.product_name,
+        start_datetime=bc.start_datetime,
+        duration_min=round(dur_min, 2),
+        n_segments=len(segs),
+        n_chars=n_chars,
+        chars_per_min=round(n_chars / dur_min, 1),
+        segments_per_min=round(len(segs) / dur_min, 2),
+        avg_chars_per_segment=round(n_chars / len(segs), 1) if segs else 0.0,
+        type_token_ratio=round(ttr, 4),
+        repetition_index=round(rep, 4),
+        axes=axis_metrics,
+        numeric=num,
+        bucket_sec=bucket_sec,
+        timeline=timeline,
+        top_keywords=tu.token_counts(bc.full_text).most_common(top_n),
+        rhythm=rhythm,
+        has_native_rhythm=has_native_rhythm,
+        revenue=revenue,
+        sales_count=bc.extra.get("sales_count"),
+        weighted_minutes=round(wmin, 2) if wmin is not None else None,
+        revenue_per_weighted_min=round(revenue_per_wmin, 1) if revenue_per_wmin is not None else None,
+        conditions=extract_conditions(
+            segs, list_price=bc.price,
+            # 상품 사전의 '구성품' 축 키워드를 구성 목록 후보로 쓴다(상품군마다 다르다)
+            component_terms=[k for ax in lex if ("구성" in ax.label or ax.key.endswith("TOOLS")) for k in ax.keywords],
+        ),
+    )

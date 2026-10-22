@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="ko"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>홈쇼핑 방송 비교</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,'Malgun Gothic','Segoe UI',sans-serif;margin:0;padding:16px 16px 90px;background:#f7f8fa;color:#222;font-size:13px}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{margin:0 0 4px;font-size:20px}
+  h1 small{font-size:12px;font-weight:500;color:#888;margin-left:8px}
+  .sub{color:#666;font-size:12px}
+  .panel{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;margin:12px 0}
+  .panel h2{font-size:14px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+  .step{display:inline-flex;width:22px;height:22px;border-radius:50%;background:#1f4ec4;color:#fff;font-size:12px;align-items:center;justify-content:center}
+  input,select,textarea{font:inherit;border:1px solid #d0d4dc;border-radius:6px;padding:6px 8px;background:#fff;color:#222}
+  input:focus,select:focus,textarea:focus{outline:2px solid #c8dcf5;border-color:#5b8def}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .drop{border:2px dashed #c3cbd9;border-radius:8px;padding:22px;text-align:center;color:#666;cursor:pointer;transition:.15s}
+  .drop.on{border-color:#1f4ec4;background:#eef3fd;color:#1f4ec4}
+  .drop b{color:#1f4ec4}
+  button{font:inherit;cursor:pointer;border-radius:6px;padding:7px 14px;border:1px solid #1f4ec4;background:#fff;color:#1f4ec4;font-weight:600}
+  button:hover:not(:disabled){background:#1f4ec4;color:#fff}
+  button.ghost{border-color:#d0d4dc;color:#555;font-weight:500}
+  button.ghost:hover{background:#f1f3f5;color:#222}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  .tblwrap{overflow-x:auto}
+  table{width:100%;min-width:820px;border-collapse:collapse}
+  .drop,.sub{overflow-wrap:anywhere}
+  body{overflow-x:hidden}
+  th,td{padding:7px 6px;border-bottom:1px solid #eef0f3;text-align:left;vertical-align:middle}
+  th{font-size:12px;color:#666;font-weight:600;background:#fafbfc}
+  td input,td select{width:100%}
+  td.num input{text-align:right}
+  .fname{font-weight:600;word-break:break-all}
+  .meta{font-size:11px;color:#888;margin-top:2px}
+  .warn{color:#e8332f}
+  .ok{color:#0d9488}
+  textarea.paste{width:100%;min-height:150px;font-family:Consolas,'Malgun Gothic',monospace;font-size:12px}
+  textarea.tsv{width:100%;min-height:90px;font-family:Consolas,'Malgun Gothic',monospace;font-size:12px}
+  .bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #e5e7eb;box-shadow:0 -4px 16px rgba(0,0,0,.06);padding:10px 16px}
+  .bar .wrap{display:flex;align-items:center;gap:12px}
+  .bar .go{background:#1f4ec4;color:#fff;padding:9px 22px;font-size:14px}
+  .bar .go:hover:not(:disabled){filter:brightness(1.1)}
+  .empty{color:#aaa;text-align:center;padding:18px}
+  .x{border:none;color:#aaa;padding:2px 6px;font-size:16px;font-weight:400}
+  .x:hover{background:none;color:#e8332f}
+</style></head><body><div class="wrap">
+
+<h1>📺 홈쇼핑 방송 비교 <small>자막을 넣으면 화법·조건·분당주문금액을 비교합니다 · 홈쇼핑모아에 접속하지 않습니다 · <a href="/weekly" style="color:#1f4ec4">주간 편성표 →</a> · <a href="/reports" style="color:#1f4ec4">지난 리포트</a></small></h1>
+
+<div class="panel">
+  <h2><span class="step">1</span> 상품</h2>
+  <div class="row">
+    <input id="kw" placeholder="상품명 (예: 다이슨 디지털 슬림)" style="width:320px">
+    <span class="sub">상품군에 맞는 화법 사전이 자동으로 붙습니다 (청소기·로봇청소기·냉장고·서큘레이터 …)</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h2><span class="step">2</span> 자막 넣기</h2>
+  <div class="drop" id="drop">
+    데이터허브 자막 화면을 복사해 저장한 <b>.txt 파일</b>을 여기에 끌어다 놓거나 <b>눌러서 선택</b>하세요 (여러 개 가능)<br>
+    <span class="sub">파일명을 <code>260107_GS_상품명.txt</code> 처럼 하면 날짜·방송사가 자동으로 채워집니다</span>
+  </div>
+  <input type="file" id="file" accept=".txt,text/plain" multiple hidden>
+  <div class="row" style="margin-top:10px">
+    <button class="ghost" id="addPaste">+ 자막 직접 붙여넣기</button>
+    <span class="sub">데이터허브 자막 탭 복사본 · 음성 인식 결과 · "00:12 문장" 형식 모두 읽습니다</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h2><span class="step">3</span> 방송 정보 <span class="sub" style="font-weight:400">— 시작 시각·매출을 넣으면 가중분·분당주문금액이 계산됩니다</span></h2>
+  <div class="tblwrap"><table>
+    <thead><tr><th style="width:26%">자막</th><th style="width:15%">방송사</th><th style="width:18%">방송 시작</th><th style="width:8%">편성(분)</th><th style="width:13%">판매가</th><th style="width:16%">매출액</th><th></th></tr></thead>
+    <tbody id="rows"><tr><td colspan="7" class="empty">아직 넣은 자막이 없습니다</td></tr></tbody>
+  </table></div>
+  <details style="margin-top:10px">
+    <summary style="cursor:pointer;color:#1f4ec4;font-weight:600">엑셀 표로 한 번에 채우기</summary>
+    <p class="sub">엑셀에서 아래처럼 머리글까지 복사해 붙여넣고 [적용]을 누르세요. 방송사+날짜가 같은 자막에 채워지고, 안 맞으면 위에서부터 순서대로 채웁니다.</p>
+    <textarea class="tsv" id="tsv" placeholder="방송사	방송시작일시	판매가	매출액
+GS	26-01-07 14:35	370,000	197,000,000
+HD	26-06-21 12:30	363,000	451,000,000"></textarea>
+    <div class="row" style="margin-top:6px"><button class="ghost" id="applyTsv">적용</button><span id="tsvMsg" class="sub"></span></div>
+  </details>
+</div>
+
+</div>
+
+<div class="bar"><div class="wrap">
+  <span id="status" class="sub">자막을 2개 이상 넣으면 비교할 수 있습니다</span>
+  <span style="margin-left:auto"></span>
+  <button class="go" id="go" disabled>비교 리포트 만들기 →</button>
+</div></div>
+
+<form id="f" method="POST" action="/api/compare-text" target="_blank" style="display:none">
+  <input type="hidden" name="payload" id="payload">
+</form>
+
+<script>
+// 방송사 — 서버(hsbot/sources/datahub_copy.py CHANNEL_ALIASES)와 같은 코드
+const CHANNELS = [
+  ['gsshop','GS샵'],['cjmall','CJ온스타일'],['lotteimall','롯데홈쇼핑'],['hmall','현대홈쇼핑'],['nsmall','NS홈쇼핑'],
+  ['hnsmall','홈앤쇼핑'],['immall','공영쇼핑'],['gsmyshop','GS마이샵'],['cjmallplus','CJ온스타일+'],['lotteonetv','롯데원티비'],
+  ['hmallplus','현대홈쇼핑+샵'],['nsmallplus','NS샵+'],['kshop','KT알파쇼핑'],['kshopplus','KT알파쇼핑+'],
+  ['bshop','SK스토아'],['wshop','W쇼핑'],['ssgshop','신세계쇼핑'],['shopnt','쇼핑엔티'],
+];
+const ALIAS = {GS:'gsshop','GS샵':'gsshop',GSMY:'gsmyshop','GS마이샵':'gsmyshop','마이샵':'gsmyshop',HD:'hmall','현대':'hmall',
+  '현대홈쇼핑':'hmall','HD+':'hmallplus','현대+':'hmallplus',CJ:'cjmall','CJ온스타일':'cjmall','CJ+':'cjmallplus',
+  LT:'lotteimall','롯데':'lotteimall','롯데홈쇼핑':'lotteimall','롯데원':'lotteonetv','롯데원티비':'lotteonetv',
+  NS:'nsmall','NS홈쇼핑':'nsmall','NS+':'nsmallplus','NS샵+':'nsmallplus',HN:'hnsmall','홈앤':'hnsmall','홈앤쇼핑':'hnsmall',
+  '공영':'immall','공영쇼핑':'immall',KT:'kshop','KT알파':'kshop','KT+':'kshopplus',SK:'bshop','SK스토아':'bshop',
+  W:'wshop','W쇼핑':'wshop',SSG:'ssgshop','신세계':'ssgshop','신세계쇼핑':'ssgshop','엔티':'shopnt','쇼핑엔티':'shopnt'};
+for (const [c,n] of CHANNELS) ALIAS[n] = c, ALIAS[c] = c;
+const chCode = s => { s = (s||'').trim(); return ALIAS[s] || ALIAS[s.toUpperCase()] || ''; };
+
+const items = [];   // {id, name, text, channel, start, duration, price, revenue, pasted}
+let seq = 0;
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function parseName(name){
+  const stem = name.replace(/\.[^.]+$/, '');
+  const m = stem.match(/^(\d{6}|\d{8})[_\s-]+([^_]+)[_\s-]+(.+)$/);
+  if (!m) return {date:'', channel:'', product: stem};
+  let d = m[1]; if (d.length === 6) d = '20' + d;
+  return {date:`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`, channel: chCode(m[2]), product: m[3].trim()};
+}
+function lineInfo(text){
+  const ts = (text.match(/^\s*\[?\d{1,3}:\d{2}/gm) || []).length;
+  return ts ? `시각 표시 ${ts}줄` : '<span class="warn">시각 표시를 찾지 못했어요</span>';
+}
+function num(s){ const v = String(s||'').replace(/[^\d]/g,''); return v ? parseInt(v,10) : ''; }
+function fmt(v){ return v === '' || v == null ? '' : Number(v).toLocaleString(); }
+function toDT(s){
+  // 26-01-07 14:35 / 2026-01-07 14:35 / 2026.01.07 14:35 / 26/01/07 14:35 → 2026-01-07T14:35
+  const m = String(s||'').trim().match(/^(\d{2,4})[-./](\d{1,2})[-./](\d{1,2})(?:[ T]+(\d{1,2}):(\d{2}))?/);
+  if (!m) return '';
+  let y = m[1]; if (y.length === 2) y = '20' + y;
+  const p = x => String(x).padStart(2,'0');
+  return `${y}-${p(m[2])}-${p(m[3])}T${p(m[4]||0)}:${p(m[5]||0)}`;
+}
+
+function addItem(name, text, pasted=false){
+  const meta = pasted ? {date:'',channel:'',product:''} : parseName(name);
+  items.push({id: ++seq, name, text, pasted, channel: meta.channel, start: meta.date ? meta.date + 'T00:00' : '',
+              duration: 60, price: '', revenue: ''});
+  if (!$('#kw').value && meta.product) $('#kw').value = meta.product;
+  render();
+}
+
+function render(){
+  const tb = $('#rows');
+  if (!items.length){ tb.innerHTML = '<tr><td colspan="7" class="empty">아직 넣은 자막이 없습니다</td></tr>'; update(); return; }
+  tb.innerHTML = items.map(it => `
+    <tr data-id="${it.id}">
+      <td>${it.pasted
+        ? `<div class="fname">${esc(it.name)}</div><textarea class="paste" data-k="text" placeholder="데이터허브 자막 탭을 복사해 여기에 붙여넣으세요">${esc(it.text)}</textarea>`
+        : `<div class="fname">${esc(it.name)}</div><div class="meta">${lineInfo(it.text)}</div>`}</td>
+      <td><select data-k="channel"><option value="">선택</option>${CHANNELS.map(([c,n]) => `<option value="${c}"${c===it.channel?' selected':''}>${n}</option>`).join('')}</select></td>
+      <td><input type="datetime-local" data-k="start" value="${esc(it.start)}">
+          ${it.start && it.start.endsWith('T00:00') ? '<div class="meta warn">시각을 넣어주세요</div>' : ''}</td>
+      <td class="num"><input data-k="duration" value="${esc(it.duration)}" inputmode="numeric"></td>
+      <td class="num"><input data-k="price" value="${fmt(it.price)}" placeholder="원" inputmode="numeric"></td>
+      <td class="num"><input data-k="revenue" value="${fmt(it.revenue)}" placeholder="원" inputmode="numeric"></td>
+      <td><button class="x" title="빼기" data-del="${it.id}">×</button></td>
+    </tr>`).join('');
+  update();
+}
+
+$('#rows').addEventListener('input', e => {
+  const tr = e.target.closest('tr'); if (!tr) return;
+  const it = items.find(x => x.id === +tr.dataset.id); const k = e.target.dataset.k; if (!it || !k) return;
+  it[k] = ['price','revenue','duration'].includes(k) ? num(e.target.value) : e.target.value;
+  if (k === 'text' || k === 'channel') update();
+});
+$('#rows').addEventListener('change', e => {
+  const k = e.target.dataset.k;
+  if (['price','revenue'].includes(k)) e.target.value = fmt(num(e.target.value));
+  if (k === 'start') render();
+});
+$('#rows').addEventListener('click', e => {
+  const id = e.target.dataset.del; if (!id) return;
+  items.splice(items.findIndex(x => x.id === +id), 1); render();
+});
+
+function update(){
+  const ready = items.filter(it => (it.text||'').trim());
+  const missingCh = ready.filter(it => !it.channel).length;
+  const noTime = ready.filter(it => !it.start || it.start.endsWith('T00:00')).length;
+  $('#go').disabled = ready.length < 2;
+  $('#status').innerHTML = ready.length < 2
+    ? '자막을 2개 이상 넣으면 비교할 수 있습니다'
+    : `자막 ${ready.length}건 준비됨` + (missingCh ? ` · <span class="warn">방송사 미선택 ${missingCh}건</span>` : '')
+      + (noTime ? ` · <span class="warn">시작 시각 없음 ${noTime}건 (가중분 부정확)</span>` : ' · <span class="ok">가중분 계산 가능</span>');
+}
+
+// 파일 넣기
+const drop = $('#drop'), file = $('#file');
+drop.addEventListener('click', () => file.click());
+['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('on'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('on'); }));
+drop.addEventListener('drop', e => readFiles(e.dataTransfer.files));
+file.addEventListener('change', e => { readFiles(e.target.files); file.value = ''; });
+function readFiles(list){
+  for (const f of list) {
+    const r = new FileReader();
+    r.onload = () => addItem(f.name, String(r.result).replace(/^﻿/, ''));
+    r.readAsText(f, 'utf-8');
+  }
+}
+$('#addPaste').addEventListener('click', () => addItem(`붙여넣기 ${seq + 1}`, '', true));
+
+// 주간 편성표에서 고른 방송(방송사·시각·편성·가격)을 미리 채운다 — 자막만 붙여넣으면 된다
+try {
+  const pre = JSON.parse(new URLSearchParams(location.search).get('prefill') || 'null');
+  if (Array.isArray(pre)) {
+    for (const p of pre) {
+      items.push({id: ++seq, name: p.label || `방송 ${seq}`, text: '', pasted: true, channel: p.channel || '',
+                  start: p.start || '', duration: p.duration || 60, price: p.price || '', revenue: ''});
+    }
+    if (pre[0] && !$('#kw').value) $('#kw').value = pre[0].product || '';
+    render();
+  }
+} catch (e) {}
+
+// 엑셀 표 붙여넣기
+$('#applyTsv').addEventListener('click', () => {
+  const lines = $('#tsv').value.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (!lines.length){ $('#tsvMsg').textContent = '붙여넣은 내용이 없습니다'; return; }
+  let head = lines[0].split('\t').map(h => h.trim());
+  const hasHead = head.some(h => /방송사|시작|판매가|매출|편성/.test(h));
+  if (!hasHead) head = ['방송사','방송시작일시','판매가','매출액'];
+  const col = re => head.findIndex(h => re.test(h));
+  const ci = {ch: col(/방송사|채널/), st: col(/시작|일시|날짜/), pr: col(/판매가|가격/), rv: col(/매출/), du: col(/편성|분/)};
+  const rows = (hasHead ? lines.slice(1) : lines).map(l => l.split('\t'));
+  let matched = 0, byOrder = 0; const used = new Set();
+  rows.forEach((r, i) => {
+    const ch = ci.ch >= 0 ? chCode(r[ci.ch]) : '';
+    const st = ci.st >= 0 ? toDT(r[ci.st]) : '';
+    let it = items.find(x => !used.has(x.id) && ch && x.channel === ch && st && x.start.slice(0,10) === st.slice(0,10));
+    if (it) matched++; else { it = items.filter(x => !used.has(x.id))[0]; if (it) byOrder++; }
+    if (!it) return;
+    used.add(it.id);
+    if (ch) it.channel = ch;
+    if (st) it.start = st;
+    if (ci.pr >= 0 && num(r[ci.pr]) !== '') it.price = num(r[ci.pr]);
+    if (ci.rv >= 0 && num(r[ci.rv]) !== '') it.revenue = num(r[ci.rv]);
+    if (ci.du >= 0 && num(r[ci.du]) !== '') it.duration = num(r[ci.du]);
+  });
+  $('#tsvMsg').innerHTML = `<span class="ok">${matched}건은 방송사·날짜로 맞춰 채움</span>` + (byOrder ? ` · ${byOrder}건은 순서대로 채움` : '');
+  render();
+});
+
+// 리포트
+$('#go').addEventListener('click', () => {
+  const payload = {
+    keyword: $('#kw').value.trim(),
+    items: items.filter(it => (it.text||'').trim()).map(it => ({
+      text: it.text, channel: it.channel, start: it.start, duration_min: it.duration || 60,
+      price: it.price || null, revenue: it.revenue || null, product: $('#kw').value.trim(),
+    })),
+  };
+  $('#payload').value = JSON.stringify(payload);
+  $('#f').submit();
+});
+</script>
+</body></html>

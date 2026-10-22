@@ -1,0 +1,60 @@
+{
+  "_comment": "2026-10-12 실제 응답으로 확인한 스펙. search=query/limit(최대 200)/start_date/end_date — 기간 안 최신 일부만 주므로 주 단위로 나눠 조회, 자막=broadcast_id 기준.",
+  "network_enabled": false,
+  "_network_note": "2026-10-13 데이터허브 안내: 화면을 거치지 않거나 조회 조건을 바꾼 요청은 계정+사내 네트워크 단위로 제한. 다음엔 예외 없음. 앱의 직접 호출을 끈다.",
+  "base_url": "https://datahub.hsmoa.com",
+  "auth": {
+    "type": "cookie",
+    "cookie_env": "HSMOA_DATAHUB_COOKIE",
+    "extra_headers": {
+      "User-Agent": "Mozilla/5.0",
+      "Referer": "https://datahub.hsmoa.com/"
+    }
+  },
+  "endpoints": {
+    "search": {
+      "path": "/next-api/search",
+      "query": {"query": "{keyword}", "limit": "{size}", "start_date": "{start_date}", "end_date": "{end_date}"}
+    },
+    "broadcast_list": {
+      "path": "/next-api/subtitle/products/{product_key}/broadcasts"
+    },
+    "subtitle": {
+      "path": "/next-api/subtitle/broadcasts/{broadcast_id}"
+    },
+    "schedule": {
+      "_note": "사이트 편성표와 같은 호출(2026-10-13 JS 확인). 사이트는 hour_num=4로 4시간씩 나눠 부른다.",
+      "path": "/next-api/schedule",
+      "query": {"date": "{date}", "start_hour": "{start_hour}", "hour_num": "{hour_num}", "category_filter": "{category_filter}"}
+    }
+  },
+  "mapping": {
+    "search": {
+      "list_paths": ["results"],
+      "product_key_paths": ["pdid"],
+      "product_name_paths": ["name"],
+      "channel_paths": ["tv_channel"],
+      "channel_name_paths": ["channel_name"],
+      "start_paths": ["start_datetime"],
+      "end_paths": ["end_datetime"],
+      "price_paths": ["sale_price", "price"],
+      "url_paths": ["url"]
+    },
+    "segments": {
+      "list_paths": ["segments"],
+      "text_paths": ["text"],
+      "start_paths": ["t"],
+      "end_paths": ["end"],
+      "speaker_paths": ["speaker"],
+      "kinds_paths": ["kinds"]
+    },
+    "rhythm": {"timeline_paths": ["timeline"]},
+    "broadcast": {}
+  },
+  "timeout_sec": 30,
+  "max_retries": 2,
+  "rate_limit_sec": 1.5,
+  "cache_dir": ".cache/datahub",
+  "hourly_budget": 120,
+  "cooldown_sec": 3600
+}
