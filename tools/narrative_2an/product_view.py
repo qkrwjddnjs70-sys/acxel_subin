@@ -58,6 +58,29 @@ def load_tags(key):
     return tags
 
 
+def load_splits(key):
+    """2026-10-27 사용자 결정(A): 소구가 둘 이상인 문장은 소구 하나씩의 조각으로 잘라 그 조각 글자만 센다.
+    idx → [{"text", "s": [소구], "n": [NEEDS], "m": 방식}]"""
+    path = os.path.join(PROD, f"{key}_split.jsonl")
+    out = {}
+    if os.path.exists(path):
+        for ln in open(path, encoding="utf-8"):
+            if ln.strip():
+                r = json.loads(ln)
+                out[int(r["idx"])] = [{"text": p["text"], "s": _labels(p.get("소구")), "n": _labels(p.get("NEEDS")),
+                                       "m": (p.get("방식") or "").strip()} for p in r["parts"]]
+    return out
+
+
+def pieces(b, i):
+    """문장 i 의 (글자 수, 텍스트, 꼬리표) 조각들. 쪼갠 문장은 조각별, 아니면 문장 전체 하나."""
+    u = b["units"][i]
+    sp = b.get("psplit", {}).get(i)
+    if sp and "".join(p["text"] for p in sp) == u["text"]:
+        return [(max(len(p["text"]), 1), p["text"], p) for p in sp]
+    return [(max(len(u["text"]), 1), u["text"], b["ptags"][i])]
+
+
 def _e(x):
     return html.escape(str(x))
 
@@ -67,21 +90,22 @@ def attach(data, mmss, weight):
     for b in data:
         tags = load_tags(b["key"])
         b["ptags"] = tags
+        b["psplit"] = load_splits(b["key"])
         tot = 0
         S, N, M = Counter(), Counter(), Counter()
         sent = defaultdict(list)
-        for i, tg in tags.items():
+        for i in sorted(tags):
             u = b["units"][i]
-            w = weight(u)
-            tot += w
-            line = [mmss(u["t"]), u["text"], 1 if u["vcr"] else 0, " · ".join(tg["s"]), " · ".join(tg["n"])]
-            for s in tg["s"]:
-                S[s] += w
-                sent["s:" + s].append(line)
-            for n in tg["n"]:
-                N[n] += w
-                sent["n:" + n].append(line)
-            M[tg["m"]] += w
+            for w, text, tg in pieces(b, i):
+                tot += w
+                line = [mmss(u["t"]), text, 1 if u["vcr"] else 0, " · ".join(tg["s"]), " · ".join(tg["n"])]
+                for s in tg["s"]:
+                    S[s] += w
+                    sent["s:" + s].append(line)
+                for n in tg["n"]:
+                    N[n] += w
+                    sent["n:" + n].append(line)
+                M[tg["m"]] += w
         b["pstat"] = {"tot": tot, "S": S, "N": N, "M": M, "sent": sent}
 
 
@@ -89,14 +113,18 @@ def strip_html(b, total, end_t):
     """흐름 막대 아래 얇은 띠: 상품 문장마다 첫 번째 소구 색."""
     us, tags = b["units"], b["ptags"]
     out = []
-    for i, tg in sorted(tags.items()):
-        if not tg["s"]:
-            continue
+    for i in sorted(tags):
         t0 = us[i]["t"]
-        t1 = us[i + 1]["t"] if i + 1 < len(us) else end_t
-        t1 = min(t1, t0 + 20)
-        out.append(f"<i title='{_e(tg['s'][0])}: {_e(us[i]['text'][:50])}' style='left:{100 * t0 / total:.3f}%;"
-                   f"width:{max(100 * (t1 - t0) / total, 0.12):.3f}%;background:{SOGU_COLORS.get(tg['s'][0], '#c7c6c3')}'></i>")
+        t1 = min(us[i + 1]["t"] if i + 1 < len(us) else end_t, t0 + 20)
+        ps = pieces(b, i)
+        allw = sum(w for w, _, _ in ps)
+        a = t0
+        for w, text, tg in ps:  # 쪼갠 조각은 글자 수 비율로 시간 나눔
+            z = a + (t1 - t0) * w / allw
+            if tg["s"]:
+                out.append(f"<i title='{_e(tg['s'][0])}: {_e(text[:50])}' style='left:{100 * a / total:.3f}%;"
+                           f"width:{max(100 * (z - a) / total, 0.12):.3f}%;background:{SOGU_COLORS.get(tg['s'][0], '#c7c6c3')}'></i>")
+            a = z
     return f"<div class='pstrip'>{''.join(out)}</div>"
 
 
@@ -167,7 +195,7 @@ def section(data):
 #psent .tg{{color:rgba(55,53,47,.5);font-size:12px;margin-left:6px}}
 </style>
 <h2>상품 소구 분석 — 무엇을, 누구에게</h2>
-<p class="sub">상품 묶음 문장을 하나씩 읽고 <b>소구 포인트</b>(무엇을 장점으로 내세웠나)와 <b>NEEDS</b>(누구의 어떤 고민을 건드렸나) 꼬리표를 붙인 뒤 세 방송을 같은 기준으로 검수했습니다. 한 문장에 꼬리표가 여러 개 붙을 수 있어 합계가 100%를 넘습니다. 칸·막대를 누르면 실제 문장이 나옵니다.</p>
+<p class="sub">상품 묶음 문장을 하나씩 읽고 <b>소구 포인트</b>(무엇을 장점으로 내세웠나)와 <b>NEEDS</b>(누구의 어떤 고민을 건드렸나) 꼬리표를 붙인 뒤 세 방송을 같은 기준으로 검수했습니다. 소구가 둘 이상 섞인 문장은 소구 하나씩의 조각으로 잘라 그 조각의 글자만 셉니다(같은 글자를 두 번 세지 않음). NEEDS는 한 조각이 여러 고민을 건드릴 수 있어 합계가 100%를 넘을 수 있습니다. 칸·막대를 누르면 실제 문장이 나옵니다.</p>
 <h3>소구 포인트 × 방송</h3>
 <div class="ptog">칸 색 기준 <button class="on" data-m="a">말한 양(글자 수)</button> <button data-m="s">비율(상품 멘트 중)</button></div>
 {table}

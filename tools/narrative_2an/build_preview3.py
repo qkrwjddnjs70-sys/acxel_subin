@@ -184,7 +184,7 @@ def segment(units, end_t):
     return out
 
 
-def emphasis_section(data):
+def emphasis_section(data, prod_html=""):
     """방송별로 모든 문장을 세분류에 매칭해 '무엇을 많이 강조했나'를 막대로 비교."""
     cats = [k for g in GROUPS for k in CODES if CODES[k][1] == g and k != "X2"]
     stats, sents = {}, {}
@@ -273,6 +273,9 @@ def emphasis_section(data):
         grows.append(f"<div class='erow'><div class='elab'><span class='ecat' style='background:{GROUP_COLORS[g]}'></span><b>{g}</b>"
                      f"<div class='sub' style='font-size:11.5px;line-height:1.4'>{e(sub)}</div></div><div class='ebars'>{bars}</div></div>")
 
+    if prod_html:  # 2026-10-27: 상품 줄 바로 아래에서 '무엇을·누구에게'로 이어서 본다
+        grows.insert(1, "<details class='pdet'><summary>상품 안을 더 보기 — 무엇을 내세웠나(소구 포인트) · 누구에게(NEEDS)</summary>" + prod_html + "</details>")
+
     rows = []
     for g in GROUPS:
         gk = [k for k in cats if CODES[k][1] == g]
@@ -320,13 +323,15 @@ def emphasis_section(data):
 .ebar.stack .stk{{flex:1;display:flex;height:18px}}.ebar.stack .stk i{{height:18px;cursor:pointer;min-width:0;border-radius:0}}
 .ebar.stack .stk i:first-child{{border-radius:2px 0 0 2px}}.ebar.stack .stk i:last-child{{border-radius:0 2px 2px 0}}
 .ebar.stack .ev{{width:250px;flex:none;white-space:normal;line-height:1.25}}.eseg.on{{outline:2px solid #37352f;outline-offset:1px;position:relative;z-index:1}}
+.pdet{{margin:4px 0 10px 0;border:1px solid #d3e5ef;background:#f4f9fc;border-radius:6px;padding:4px 14px}}
+.pdet>summary{{cursor:pointer;font-size:14px;font-weight:650;color:#1f5f7f;padding:6px 0}}
+.pdet[open]{{background:#fff;padding-bottom:12px}}
 .esubd{{margin:12px 0}}.esubd>summary{{cursor:pointer;font-size:14px;font-weight:600;padding:6px 10px;border:1px solid #e9e9e7;border-radius:4px;display:inline-block}}
 .esubd[open]>summary{{background:#f7f6f3}}
 @media (max-width:600px){{.erow{{grid-template-columns:1fr}}}}
 </style>
 <h2>방송별 강조 포인트 — 모든 문장을 세분류로</h2>
 <p class="sub">각 방송의 문장을 하나도 빼지 않고 15개 세분류에 매칭한 결과입니다. <b>말한 양</b> = 실제로 말한 글자 수(방송마다 말한 총량이 달라서 '얼마나 많이 말했나'를 그대로 보여줌), <b>비율</b> = 그 방송의 판매 멘트(진행·맞장구·잡음 제외) 중 해당 분류의 비중. 굵은 숫자는 세 방송 중 가장 많이 쓴 곳. 막대를 누르면 실제 문장이 나옵니다.</p>
-<div class="etops">{''.join(tops)}</div>
 <div style="display:flex;flex-wrap:wrap;gap:8px 20px;align-items:center">
 <div class="etog">기준 <button class="on" data-m="a">말한 양(글자 수)</button> <button data-m="s">비율 · 문장 수</button> <button data-m="c">비율 · 글자 수</button></div></div>
 {''.join(grows)}

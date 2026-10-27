@@ -1,0 +1,94 @@
+<style>
+.sumcall{background:#fbf3db;border-radius:6px;padding:16px 18px;margin:14px 0 6px;font-size:15.5px;line-height:1.7}
+.perf{border-collapse:collapse;width:100%;font-size:14px;margin:8px 0}
+.perf th,.perf td{padding:8px 10px;border-bottom:1px solid #e9e9e7;text-align:right;white-space:nowrap}
+.perf th{background:#f7f6f3;color:rgba(55,53,47,.5);font-weight:500;font-size:12.5px}
+.perf td:first-child,.perf th:first-child{text-align:left}
+.perf tr.best td{background:#edf3ec}
+.perf .idx{font-weight:700}
+.perfwrap{overflow-x:auto}
+.revs{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin:10px 0}
+.rev{border:1px solid #e9e9e7;border-top:3px solid var(--c);border-radius:6px;padding:14px 16px}
+.rev h3{margin:0 0 2px;font-size:16px}
+.rev .meta{color:rgba(55,53,47,.5);font-size:12.5px;margin-bottom:8px}
+.rev p{margin:6px 0;font-size:14.5px;line-height:1.7}
+.grade{display:inline-block;font-size:12px;border-radius:4px;padding:1px 8px;margin-left:6px;vertical-align:2px}
+.grade.good{background:#edf3ec;color:#1c5a3c}.grade.mid{background:#f1f1ef;color:#5c5c5c}
+.vs{border:1px solid #e9e9e7;border-radius:6px;padding:4px 18px;margin:10px 0}
+.vs ol{list-style:none;padding-left:0;margin:10px 0}.vs li{margin:12px 0;line-height:1.75;font-size:15px}
+.vs li b.k{display:block;font-size:15.5px;margin-bottom:2px}
+.num{font-variant-numeric:tabular-nums}
+.ev{color:rgba(55,53,47,.6);font-size:13px}
+</style>
+
+<div class="sumcall">같은 다이슨 디지털 슬림 세 방송 중 <b>현대홈쇼핑 6/21이 분당주문액 714만 원으로 가장 잘 팔았고</b>, GS샵 두 방송은 570만·579만 원으로 거의 같았습니다(현대가 약 25% 높음). 문장 단위로 비교하면 차이는 시연이 아니라 <b>"왜 여기서 사야 하는가"를 무엇으로 설득했느냐</b>에서 났습니다 — 현대는 판매 멘트의 23%를 <b>가격 비교·독점</b>("현대만·역대 최저가")에 썼고, GS는 그 자리를 <b>희소성·수량·카운트다운 푸시</b>("다음 방송 미정·매진 예상·N분 남았다")으로 채웠습니다.</div>
+
+<style>
+.pi-legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:14px;margin:22px 0 10px}
+.pi-dot{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:7px;vertical-align:-1px}
+.pi-panel{border:1px solid #e9e9e7;border-radius:6px;padding:16px 18px 18px;margin:0 0 6px}
+.pi-panel>b{font-size:17px;font-weight:650}
+.pi-t{border-collapse:collapse;width:100%;font-size:14.5px;min-width:700px;margin-top:10px}
+.pi-t th,.pi-t td{padding:11px 8px;text-align:right;border-bottom:1px solid #e9e9e7;white-space:nowrap;font-variant-numeric:tabular-nums}
+.pi-t th{background:#f7f6f3;color:rgba(55,53,47,.5);font-weight:500;font-size:13px}
+.pi-t th.pi-g{border-left:1px solid #e9e9e7}.pi-t td.pi-g{border-left:1px solid #f1f1ef}
+.pi-t td:first-child,.pi-t th:first-child{text-align:left}
+.pi-t tr.pi-best td{background:#edf3ec}
+.pi-a{color:inherit;text-decoration:none}.pi-a:hover{text-decoration:underline}.pi-ext{color:rgba(55,53,47,.4);font-size:12px}
+.pi-when{display:inline-block;font-size:11.5px;line-height:1.5;padding:0 7px;border-radius:4px;background:#f1f1ef;color:rgba(55,53,47,.72);margin-bottom:3px;font-variant-numeric:tabular-nums}
+.pi-a{display:block}
+.pi-kind{font-size:12px;padding:1px 8px;border-radius:4px;background:#fdebec;color:#a02a2a}
+.pi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin-top:18px}
+.pi-h{font-size:13px;color:rgba(55,53,47,.72);font-weight:600;margin-bottom:6px}
+.pi-row{display:grid;grid-template-columns:118px 1fr 70px;gap:8px;align-items:center;margin:6px 0;font-size:13.5px}
+.pi-row>span:first-child{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pi-track{position:relative;height:14px;border-radius:3px;background:#f1f1ef;overflow:hidden}
+.pi-track i{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+.pi-v{text-align:right;font-variant-numeric:tabular-nums}
+.pi-sc{overflow-x:auto}
+</style>
+<h2>실적 비교</h2>
+<div class="pi-legend"><span><i class='pi-dot' style='background:#2383e2'></i>GS샵 01/07</span><span><i class='pi-dot' style='background:#d9730d'></i>GS샵 02/17</span><span><i class='pi-dot' style='background:#0f7b6c'></i>현대홈쇼핑 06/21</span></div>
+<div class="pi-panel"><b>비교 방송 정보</b> <span class="sub">모두 라이브 · 다이슨 디지털 슬림 · 편성 60분 · 방송명을 누르면 홈쇼핑모아로 이동</span>
+<div class="pi-sc"><table class="pi-t"><thead><tr><th>홈쇼핑사</th><th>가중분</th><th class="pi-g">판매가</th><th>멘트상 최종가</th><th>무이자</th><th>사은품</th><th class="pi-g">편성 추정 매출</th><th>분당주문액</th><th>효율 지수</th></tr></thead><tbody><tr><td><span class='pi-when'>2026 01/07(수) 14:35</span><a class='pi-a' href='https://hsmoa.com/?q=%EB%8B%A4%EC%9D%B4%EC%8A%A8%20%EB%94%94%EC%A7%80%ED%84%B8%20%EC%8A%AC%EB%A6%BC' target='_blank' rel='noopener' title='홈쇼핑모아에서 보기'><i class='pi-dot' style='background:#2383e2'></i>GS샵 <span class='pi-ext'>↗</span></a></td><td>34.5분</td><td>370,000원</td><td>316,350원</td><td>10개월</td><td>없음</td><td>1.97억</td><td><b>570만</b></td><td><b>100</b></td></tr><tr><td><span class='pi-when'>2026 02/17(화) 22:55</span><a class='pi-a' href='https://hsmoa.com/?q=%EB%8B%A4%EC%9D%B4%EC%8A%A8%20%EB%94%94%EC%A7%80%ED%84%B8%20%EC%8A%AC%EB%A6%BC' target='_blank' rel='noopener' title='홈쇼핑모아에서 보기'><i class='pi-dot' style='background:#d9730d'></i>GS샵 <span class='pi-ext'>↗</span></a></td><td>54.6분</td><td>370,000원</td><td>323,190원</td><td>10개월</td><td>없음</td><td>3.16억</td><td><b>579만</b></td><td><b>102</b></td></tr><tr class="pi-best"><td><span class='pi-when'>2026 06/21(일) 12:30</span><a class='pi-a' href='https://hsmoa.com/?q=%EB%8B%A4%EC%9D%B4%EC%8A%A8%20%EB%94%94%EC%A7%80%ED%84%B8%20%EC%8A%AC%EB%A6%BC' target='_blank' rel='noopener' title='홈쇼핑모아에서 보기'><i class='pi-dot' style='background:#0f7b6c'></i>현대홈쇼핑 <span class='pi-ext'>↗</span></a></td><td>63.2분</td><td>363,000원</td><td>308,853원</td><td>약 12개월</td><td>커피 2잔</td><td>4.51억</td><td><b>714만</b></td><td><b>125</b></td></tr></tbody></table></div>
+<div class="pi-grid"><div><div class='pi-h'>편성 추정 매출</div><div class='pi-row'><span style='color:#2383e2'>GS샵 01/07</span><span class='pi-track'><i style='width:43.7%;background:#2383e2'></i></span><span class='pi-v'>1.97억</span></div><div class='pi-row'><span style='color:#d9730d'>GS샵 02/17</span><span class='pi-track'><i style='width:70.1%;background:#d9730d'></i></span><span class='pi-v'>3.16억</span></div><div class='pi-row'><span style='color:#0f7b6c'>현대홈쇼핑 06/21</span><span class='pi-track'><i style='width:100.0%;background:#0f7b6c'></i></span><span class='pi-v'>4.51억</span></div></div><div><div class='pi-h'>가중분</div><div class='pi-row'><span style='color:#2383e2'>GS샵 01/07</span><span class='pi-track'><i style='width:54.6%;background:#2383e2'></i></span><span class='pi-v'>34.5분</span></div><div class='pi-row'><span style='color:#d9730d'>GS샵 02/17</span><span class='pi-track'><i style='width:86.4%;background:#d9730d'></i></span><span class='pi-v'>54.6분</span></div><div class='pi-row'><span style='color:#0f7b6c'>현대홈쇼핑 06/21</span><span class='pi-track'><i style='width:100.0%;background:#0f7b6c'></i></span><span class='pi-v'>63.2분</span></div></div><div><div class='pi-h'>분당주문액</div><div class='pi-row'><span style='color:#2383e2'>GS샵 01/07</span><span class='pi-track'><i style='width:79.9%;background:#2383e2'></i></span><span class='pi-v'>570만</span></div><div class='pi-row'><span style='color:#d9730d'>GS샵 02/17</span><span class='pi-track'><i style='width:81.1%;background:#d9730d'></i></span><span class='pi-v'>579만</span></div><div class='pi-row'><span style='color:#0f7b6c'>현대홈쇼핑 06/21</span><span class='pi-track'><i style='width:100.0%;background:#0f7b6c'></i></span><span class='pi-v'>714만</span></div></div></div>
+</div>
+<p class="ev">분당주문액 = 편성 추정 매출 ÷ 가중분(시간대별 수요 가중치를 합산한 분, 라이브 기준표). 효율 지수는 GS샵 01/07을 100으로 둔 상대값. 최종가·무이자·사은품은 방송 멘트에서 확인한 값입니다.</p>
+
+<h2>방송별 총평</h2>
+<div class="revs">
+<div class="rev" style="--c:#2383e2"><h3 style="color:#2383e2">GS샵 1/7 <span class="grade mid">지수 100</span></h3>
+<div class="meta">평일 오후 · <b>압박형</b></div>
+<p>시연과 생활 공감으로 친근하게 끌고 가면서, 처음부터 끝까지 "다음 방송 미정·매진 예상"으로 지금 사라고 밀었습니다. 기존 청소기에 대한 불만에 공감하고 풀패키지 구성을 가장 많이 내세웠지만, 할인을 단계별로 계산하느라 최종가가 늦게 확정됐습니다.</p></div>
+
+<div class="rev" style="--c:#d9730d"><h3 style="color:#d9730d">GS샵 2/17 <span class="grade mid">지수 102</span></h3>
+<div class="meta">평일 밤 · <b>패키지·효도형</b></div>
+<p>풀 패키지와 쇼호스트 체험담으로 "효도템" 이미지를 가장 분명하게 만들었고, 최종가도 숫자로 깔끔하게 계산해 줬습니다. 다만 후반에는 사야 할 근거보다 "빨리 사라"는 압박만 남았고, 매출이 1/7보다 높았던 건 주로 밤 시간대 덕분입니다.</p></div>
+
+<div class="rev" style="--c:#0f7b6c"><h3 style="color:#0f7b6c">현대홈쇼핑 6/21 <span class="grade good">지수 125 · 최고</span></h3>
+<div class="meta">일요일 점심 · <b>가격 확신형</b></div>
+<p>첫 가격과 동시에 "역대 최저가·현대 단독"을 꺼내 끝까지 반복했고, 상품 설명은 흡입력 하나를 눈앞에서 여러 번 증명하는 데 집중했습니다. 긴박감은 누적 매출 중계로 만들었고, 같은 메시지를 녹화가 아닌 생방송 말로 바꿔 가며 반복했습니다.</p></div>
+</div>
+
+<h2>잘된 방송 vs 잘 안된 방송 — 무엇이 달랐나</h2>
+<div class="vs"><ol>
+<li><b class="k">① 구매 이유를 '가격 근거'로 만들었나, '시간 압박'으로 만들었나</b>
+현대는 판매 멘트의 23%를 "다른 13개 홈쇼핑에도 없는 가격", "현대만" 같은 <b>가격 비교·독점</b>에 썼고, GS 두 방송은 이 비중이 3% 안팎이었습니다. 대신 GS는 <b>희소성 푸시</b>(약 8.5%, 현대 0.3%)·수량 푸시·카운트다운 푸시로 긴박감을 만들었습니다. 같은 "지금 사세요"라도 현대는 <b>"여기가 제일 싸니까"</b>라는 근거가 붙은 긴박감이었고, GS는 <b>"다음 방송이 언제일지 모르니까"</b>라는 근거 없는 긴박감에 가까웠습니다. 다른 채널과 비교하며 보는 시청자에게는 앞쪽이 더 강한 이유가 됩니다.</li>
+
+<li><b class="k">② 후반까지 '사야 할 이유'를 유지했나</b>
+현대는 조건 묶음 비중이 초반 26% → 중반 39% → 후반 36%로 끝까지 유지됐습니다. 반대로 GS 2/17은 후반에 조건이 9%까지 떨어지고 푸시가 35%로 커졌고, GS 1/7은 처음부터 끝까지 푸시가 28% 안팎으로 높게 유지됐습니다(현대 초·중반 9~14%). 잘된 방송은 마감 직전에도 "왜 사야 하는지"를 계속 말했고, 덜 된 방송은 마지막에 "빨리 사라"만 남았습니다.</li>
+
+<li><b class="k">③ 가격을 한 숫자로 말했나, 계산식으로 말했나</b>
+현대는 5분대에 30만 8,853원을 공개한 뒤 "30만 원", "월 2만 5천 원대", "커피 두 잔"처럼 <b>짧고 같은 숫자</b>를 끝까지 반복했습니다. GS는 "33만 3천 원 → 앱 10% → 골드 등급 → 31만 원대"처럼 단계별로 설명했고, 1/7은 정확한 최종가를 39분에야 말했습니다. 실제 최종가도 현대가 GS보다 7천~1만 4천 원 낮았고 사은품까지 있었기 때문에, <b>조건 자체의 경쟁력</b>이 가장 큰 바탕이었다는 점도 함께 봐야 합니다.</li>
+
+<li><b class="k">④ 인기를 '계속 늘어나는 숫자'로 밀었나</b>
+현대는 누적 매출을 "1억 8천만 원 → 2억 8천 → 3억 7천"처럼 계속 늘어나는 숫자로 중계했습니다(인기 푸시 28문장). GS는 같은 푸시를 주로 "대기가 많다·매진 예상" 같은 수량 압박(33·14문장)으로 했습니다. GS도 동시 접속·대기 인원을 말했지만 2/17은 200명·600명·300명으로 숫자가 오락가락해 신뢰를 주기 어려웠습니다. GS는 고객 후기(13~27문장)를 더 많이 썼지만, 실적 차이를 만든 요인으로는 보이지 않습니다.</li>
+
+<li><b class="k">⑤ 반복을 녹화로 했나, 생방송 말로 했나</b>
+GS 두 방송은 같은 녹화 요약(VCR)이 4~5번, 전체 멘트의 13~14%를 차지했습니다. 현대도 같은 메시지를 수십 번 반복했지만 VCR은 3%뿐이고 매번 다른 표현으로 말했습니다. 시청자 입장에선 "같은 영상이 또 나온다"보다 "진행자가 계속 강조한다"가 덜 지루합니다.</li>
+
+<li><b class="k">⑥ 차이를 만들지 않은 것</b>
+시연 비중(14~18%)과 "가벼운데 세다"(1kg대·핑크 아령·슈가파우더·이불 두 장) 메시지는 세 방송이 거의 같았습니다. 제품 설득은 비슷했고, 갈린 건 <b>가격을 믿게 만드는 방식</b>이었습니다.</li>
+</ol>
+<p class="ev">주의: 표본이 3건이고 계절(1·2월 vs 6월)·요일·시간대가 달라 화법이 실적에 미친 영향을 단정할 수 없습니다. 비중은 검수까지 마친 문장 분류(15개 기준)의 글자 수 기준이며, 진행·맞장구·잡음은 제외했습니다.</p>
+</div>
