@@ -13,6 +13,7 @@ import re
 from collections import Counter
 
 from build_preview import BROADCASTS, CODES, GROUP_COLORS, GROUPS, mmss
+import product_view as PV
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MIN_SEC = 120
@@ -381,6 +382,7 @@ def main():
         data.append({"key": key, "label": label, "color": color, "kpi": kpi, "units": us,
                      "blocks": segment(us, end_t), "end": end_t})
     total = max(b["end"] for b in data)
+    PV.attach(data, mmss, weight)
 
     rows, payload = [], {}
     for b in data:
@@ -416,7 +418,7 @@ def main():
         fpl = f"<div class='fp' style='left:{100 * sec(fp) / total:.3f}%' title='첫 가격 언급 {fp}'></div>" if fp else ""
         n_blocks = len(b["blocks"])
         rows.append(f"<div class='row'><div class='nm' style='color:{b['color']}'>{e(b['label'])}<div class='sub'>{n_blocks}개 구간</div></div>"
-                    f"<div><div class='bar'>{''.join(segs)}{vcr_html}{fpl}</div><div class='marks'>{marks}</div></div></div>")
+                    f"<div><div class='bar'>{''.join(segs)}{vcr_html}{fpl}</div>{PV.strip_html(b, total, b['end'])}<div class='marks'>{marks}</div></div></div>")
     ticks = "".join(f"<span style='left:{100 * m * 60 / total:.2f}%'>{m}분</span>" for m in range(0, int(total // 60) + 1, 10))
     legend_main = "".join(f"<span style='font-weight:650'><i style='background:{GROUP_COLORS[g]};width:14px;height:14px'></i>{g}</span>" for g in GROUPS)
     legend = "".join(
@@ -439,6 +441,7 @@ def main():
 .nm .sub{font-weight:400}
 .chip.vcr{outline:1px dashed #787774;outline-offset:1px}
 .why{color:#d9730d;font-size:11.5px;margin-left:6px}
+""" + PV.STRIP_CSS + """
 </style></head>"""
     head = head.replace("</head>", style_extra).replace("2안 미리보기 v2 — 방송 흐름 + 상세 분류", "다이슨 디지털 슬림 — 방송 흐름 비교 (2안)")
     script = rest[rest.index("<script>"):]
@@ -467,9 +470,11 @@ def main():
 {''.join(rows)}
 <div class="axis">{ticks}</div>
 <div class="legend"><div class="lg" style="gap:6px 18px">{legend_main}<span class="sub">← 막대 색 = 대분류</span></div></div>
+{PV.strip_legend()}
 <details style="margin:-4px 0 10px"><summary class="sub" style="cursor:pointer">세부 분류(15개) 보기 — 구간을 누르면 이 기준으로 나뉜 비중이 나옵니다</summary><div class="legend">{legend}</div></details>
 <div id="detail"><span class="sub">위 막대에서 구간을 눌러 보세요</span></div>
 {emph_html}
+{PV.section(data)}
 </div>
 """
     out_html = head + body + script
