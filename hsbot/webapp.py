@@ -14,6 +14,7 @@ import html
 import json
 import os
 import sys
+import time
 import traceback
 import urllib.parse
 from datetime import date, datetime, timedelta
@@ -26,6 +27,7 @@ from .metrics import analyze as analyze_one
 from .models import KST
 from .report import render as render_html
 from .schedule import build_week, build_week_local
+from .sources import cmpsite, labangba, library
 from .sources.datahub import DataHubClient, DataHubError
 from .time_weight import LIVE_CHANNELS, weighted_minutes_from_iso
 
@@ -89,6 +91,134 @@ def _search_weeks(client: DataHubClient, keyword: str, weeks: int) -> list[dc.Br
     return refs
 
 
+def attach_labangba(broadcasts: list[dict]) -> None:
+    """방송마다 라방바 편성 판매금액(`revenue`)과 실제 편성 시각·길이를 채운다.
+
+    라방바에 없는 방송(T커머스·4개사 외·매칭 실패)은 매출을 비운다 — 홈쇼핑모아 추정과 섞지 않는다.
+    단, 보관함 방송정보.csv 에 매출을 직접 적은 방송(revenue_source 지정)은 그 숫자를 그대로 둔다.
+    """
+    for b in broadcasts:
+        if not b.get("revenue_source"):
+            b["revenue"] = b["sales_count"] = None
+            hit = None
+            if not b.get("upcoming"):
+                # 2026-11-16: 사내 '아이템 편성 비교'(라방바 원천, 1월~) 먼저 — 매출·원천 가중분·판매수량을 함께 준다.
+                # 거기 없는 방송만 기존 라방바 파일로 채운다(가중분은 시간대 가중치로 계산).
+                try:
+                    hit = cmpsite.lookup(b["channel"], b.get("start_datetime") or "")
+                except Exception:  # noqa: BLE001
+                    hit = None
+                if not hit:
+                    hit = labangba.lookup(b["channel"], b.get("start_datetime") or "")
+            if hit:
+                b.update(revenue=hit["revenue"], sales_count=hit["sales_count"], end_datetime=hit["end"],
+                         revenue_source="라방바", weighted_min=hit.get("weighted_min"),
+                         duration_min=round((datetime.fromisoformat(hit["end"]) -
+                                             datetime.fromisoformat(hit["start"])).total_seconds() / 60))
+        # 날씨·강수(기상청 서울, 일 단위) — 사내 '아이템 편성 비교' 페이지 데이터. 매출은 아직 기존 라방바 그대로.
+        try:
+            b["weather"] = cmpsite.weather(b.get("start_datetime") or "") if b.get("start_datetime") else None
+        except Exception:  # noqa: BLE001 — 사내망 밖이면 날씨 칸만 비운다
+            b["weather"] = None
+        b["revenue_per_weighted_min"] = None
+        if b.get("revenue") is not None:
+            wmin = b.get("weighted_min") or weighted_minutes_from_iso(b["start_datetime"], b["end_datetime"], b["channel"])
+            if wmin and wmin > 0:
+                b["revenue_per_weighted_min"] = round(b["revenue"] / wmin)
+
+
+def revenue_note(items: list[dict]) -> str:
+    """리포트 하단에 붙일 매출 출처 단서."""
+    srcs = sorted({it.get("revenue_source") for it in items if it.get("revenue") is not None})
+    notes = {"라방바": labangba.SOURCE_NOTE,
+             "홈쇼핑모아": "매출은 홈쇼핑모아 편성 추정치입니다 — 실제 매출과 다릅니다."}
+    return " ".join(notes.get(s, f"매출 출처: {s}") for s in srcs)
+
+
+def search_library(keyword: str) -> dict | None:
+    """직접 호출이 꺼져 있을 때 방송 보관함(demo_library/<키워드>/)에서 찾는다. 폴더가 없으면 None."""
+    folder = library.find_folder(keyword)
+    if not folder:
+        return None
+    time.sleep(1.2)  # 보관함은 즉시 읽히지만 화면 흐름은 실제 검색과 같게
+    now = datetime.now(KST)
+    broadcasts = library.list_broadcasts(folder)
+    for b in broadcasts:
+        b.update(broadcast_id=None, channel_name=channel_display(b["channel"]),
+                 broadcast_type=broadcast_type(b["channel"]), model_key=dc.model_key(b["product_name"]),
+                 upcoming=datetime.fromisoformat(b["start_datetime"]).replace(tzinfo=KST) > now)
+    attach_labangba(broadcasts)
+    return {"keyword": keyword, "broadcasts": broadcasts}
+
+
+BACK_JS = "if(history.length>1&&document.referrer){history.back();}else{location.href='/search';}return false;"
+BACK_BTN = ('<a class="hb-back" href="/search" onclick="' + BACK_JS + '" title="이전 화면으로(없으면 방송 검색으로)">← 뒤로</a>'
+            '<style>.hb-back{position:absolute;top:12px;left:12px;z-index:1000;background:#fff;color:#37352f;border:1px solid #e3e2de;'
+            'border-radius:999px;padding:5px 14px;font:600 13px/1.4 Pretendard,-apple-system,sans-serif;text-decoration:none;'
+            'box-shadow:0 1px 3px rgba(0,0,0,.08)}.hb-back:hover{background:#f1f1ef}</style>')
+
+
+def with_back_button(page: str) -> str:
+    """리포트 화면 왼쪽 위에 '뒤로' 버튼. 탭 화면(2안|1안)은 탭 줄에 이미 있어서 넣지 않는다."""
+    if 'class="hb-back"' in page or 'class="tabs"' in page:
+        return page
+    i = page.find("<body")
+    if i < 0:
+        return BACK_BTN + page
+    j = page.index(">", i) + 1
+    return page[:j] + BACK_BTN + page[j:]
+
+
+def tabbed_report(html_2an: str, html_1an: str) -> str:
+    """2안(소구 문맥 분류)과 1안(키워드 집계)을 탭 하나로. 처음엔 2안을 보여준다."""
+    import html as _h
+    return f"""<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>방송 비교</title><style>
+html,body{{margin:0;height:100%;background:#fff;font-family:Pretendard,-apple-system,sans-serif}}
+.tabs{{display:flex;gap:4px;padding:8px 16px 0;border-bottom:1px solid #e3e2de;background:#fbfbfa;height:40px;box-sizing:border-box}}
+.tabs button{{border:0;background:none;padding:6px 14px;font-size:14px;color:#787774;cursor:pointer;border-radius:6px 6px 0 0;font-family:inherit}}
+.tabs button.on{{background:#fff;color:#37352f;font-weight:700;box-shadow:0 -1px 0 #e3e2de inset,1px 0 0 #e3e2de,-1px 0 0 #e3e2de}}
+.tabs a{{margin-left:auto;align-self:center;font-size:13px;color:#787774;text-decoration:none}}
+iframe{{border:0;width:100%;height:calc(100% - 40px);display:none}} iframe.on{{display:block}}
+</style></head><body>
+<div class="tabs"><button class="on" data-t="a">2안 · 소구 문맥 분류</button><button data-t="b">1안 · 키워드 집계</button><a href="/search" onclick="{BACK_JS}">← 뒤로</a></div>
+<iframe id="a" class="on" srcdoc="{_h.escape(html_2an, quote=True)}"></iframe>
+<iframe id="b" srcdoc="{_h.escape(html_1an, quote=True)}"></iframe>
+<script>document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{{
+document.querySelectorAll('.tabs button,iframe').forEach(x=>x.classList.remove('on'));
+b.classList.add('on');document.getElementById(b.dataset.t).classList.add('on');}});</script>
+</body></html>"""
+
+
+def build_library_compare_html(*, items: list[dict], keyword: str) -> str:
+    """보관함 방송 비교. 미리 만든 리포트(리포트.html)가 이 선택과 맞으면 그것을, 아니면 1안을 바로 만든다."""
+    folder = library.find_folder(keyword)
+    if not folder:
+        raise DataHubError(f"'{keyword}' 보관함 폴더가 없습니다(demo_library/).")
+    pre_name = library.prebuilt_report_name(folder, [it["local_file"] for it in items])
+    if pre_name:
+        pre = library.prebuilt_report(folder, [it["local_file"] for it in items])
+        second = library.prebuilt_2an(folder, pre_name)
+        return tabbed_report(second, pre) if second else pre
+    broadcasts = []
+    for it in items:
+        bc = library.load(folder, it)
+        bc.channel_name = channel_display(it["channel"])
+        broadcasts.append(bc)
+    seen: dict[str, int] = {}
+    for bc in broadcasts:
+        seen[bc.channel_name] = seen.get(bc.channel_name, 0) + 1
+    for bc in broadcasts:
+        label = f"{bc.channel_name} {bc.start_datetime[5:10].replace('-', '/')}"
+        bc.channel_name = label if seen[bc.channel_name] > 1 else bc.channel_name
+    product = keyword or broadcasts[0].product_name
+    lex = load_combined(default_lexicons(product))
+    metrics = [analyze_one(bc, lex) for bc in broadcasts]
+    res = compare_broadcasts(broadcasts, metrics)
+    return render_html(res, title=f"{product} — 홈쇼핑 채널별 판매 화법 비교",
+                       source_note=f"방송 {len(broadcasts)}건 · 사전 {lex.name} · {revenue_note(items)}")
+
+
 def search_broadcasts(client: DataHubClient, keyword: str, *, weeks: int = 0, limit: int = 400) -> dict:
     """키워드 → 검색에 걸린 방송을 최신순으로 최대 `limit`개 그대로 나열한다.
 
@@ -136,11 +266,10 @@ def search_broadcasts(client: DataHubClient, keyword: str, *, weeks: int = 0, li
         )
     broadcasts.sort(key=lambda b: b["start_datetime"], reverse=True)
     broadcasts = broadcasts[:limit]
-    past = [b for b in broadcasts if not b["upcoming"]]
     # 자막 유무·잠김은 목록 단계에서 확인하지 않는다(방송마다 호출이 나가 제재를 불렀다).
     # 비교할 때 고른 방송만 확인하고, 못 쓰는 방송은 리포트에서 이유와 함께 뺀다.
-    for i in range(0, len(past), 50):  # 매출 API에 한 번에 너무 많이 보내지 않는다
-        _attach_revenue(client, past[i:i + 50])
+    # 매출은 홈쇼핑모아 추정 대신 라방바(사내 경쟁사 편성 분석) 기준으로 통일한다
+    attach_labangba(broadcasts)
     return {"keyword": keyword, "broadcasts": broadcasts}
 
 
@@ -221,6 +350,7 @@ def fetch_labeled(client: DataHubClient, item: dict):
     # 비교할 때마다 다시 호출할 필요 없다.
     bc.extra["broadcast_id"] = item.get("broadcast_id")
     bc.extra["revenue"] = item.get("revenue")
+    bc.extra["weighted_min"] = item.get("weighted_min")
     bc.extra["sales_count"] = item.get("sales_count")
     return bc
 
@@ -319,7 +449,7 @@ def build_compare_html(client: DataHubClient, *, items: list[dict], keyword: str
     metrics = [analyze_one(bc, lex) for bc in broadcasts]
     res = compare_broadcasts(broadcasts, metrics)
     ids = ",".join(str(b_.extra.get("broadcast_id")) for b_ in broadcasts)
-    note = f"broadcast_id={ids}"
+    note = f"broadcast_id={ids} · {revenue_note(items)}"
     if skipped:
         note += " · 제외: " + " / ".join(skipped)
     return render_html(res, title=f"{product_name} — 홈쇼핑 채널별 판매 화법 비교" if product_name else None,
@@ -331,39 +461,61 @@ INDEX_HTML = """<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>홈쇼핑 채널별 화법 비교</title>
 <style>
-:root{--bg:#0e1217;--panel:#161b22;--line:#2a323c;--tx:#e6edf3;--tx2:#a8b3bf;--accent:#5aa9ff}
+:root{--tx:#37352f;--tx2:rgba(55,53,47,.72);--tx3:rgba(55,53,47,.5);--line:#e9e9e7;--line2:#f1f1ef;--panel2:#f7f6f3;
+  --accent:#2383e2;--hl-yellow:#fbf3db;--hl-blue:#e7f3f8;--hl-red:#fdebec}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--tx);font-family:'Noto Sans KR',sans-serif;padding:24px}
-.wrap{max-width:1180px;margin:0 auto}
-h1{font-size:20px}
-input{background:var(--panel);border:1px solid var(--line);color:var(--tx);padding:10px 12px;border-radius:8px;font-size:15px;width:320px}
-button{background:var(--accent);color:#08131f;border:0;padding:10px 18px;border-radius:8px;font-size:15px;cursor:pointer;margin-left:8px}
-button:disabled{background:var(--line);color:var(--tx2);cursor:not-allowed}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 16px;margin:10px 0}
+body{margin:0;background:#fff;color:var(--tx);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;
+  font-family:Pretendard,ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI','Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:56px 24px 96px}
+h1{font-size:32px;font-weight:700;margin:0 0 8px;letter-spacing:-.02em;line-height:1.25}
+h1 a{font-size:14px;font-weight:500;color:var(--tx3);text-decoration:none;margin-left:10px;vertical-align:6px}
+h1 a:hover{color:var(--accent)}
+.lead{color:var(--tx2);margin:0 0 28px;max-width:820px}
+input{background:#fff;border:1px solid var(--line);color:var(--tx);padding:10px 12px;border-radius:6px;font-size:15px;width:340px;
+  font-family:inherit;outline:none;box-shadow:0 1px 2px rgba(15,15,15,.04)}
+input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(35,131,226,.15)}
+input[type=checkbox]{width:auto;box-shadow:none;accent-color:var(--accent)}
+button{background:var(--accent);color:#fff;border:0;padding:10px 18px;border-radius:6px;font-size:15px;font-weight:600;cursor:pointer;margin-left:8px;font-family:inherit}
+button:hover{background:#1a6fc4}
+button:disabled{background:var(--line2);color:var(--tx3);cursor:not-allowed}
+.panel{border:1px solid var(--line);border-radius:8px;margin:12px 0;overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:14px;white-space:nowrap}
-td,th{padding:8px 12px;border-bottom:1px solid var(--line);text-align:left}
-td:first-child{width:34px;text-align:center}
-.sub{color:var(--tx2);font-size:13px}
-#status{color:var(--tx2);margin:8px 0}
-#bar{display:flex;align-items:center;gap:10px;margin:10px 0}
-select{margin-left:8px;background:var(--panel);border:1px solid var(--line);color:var(--tx);padding:8px 10px;border-radius:8px;font-size:14px}
-.tag{font-size:12px;padding:2px 8px;border-radius:10px}
-.tag.live{background:#3a1f24;color:#ff9aa8}
-.tag.tc{background:#1d2b3d;color:#8cc4ff}
-.pname{max-width:420px;overflow:hidden;text-overflow:ellipsis;color:var(--tx2);font-size:13px}
-tr.upcoming td{opacity:.5}
+th{font-weight:500;color:var(--tx3);font-size:13px;background:var(--panel2)}
+td,th{padding:10px 12px;border-bottom:1px solid var(--line2);text-align:left}
+tbody tr:hover td{background:#fbfbfa}
+tbody tr:last-child td{border-bottom:0}
+td:first-child,th:first-child{width:38px;text-align:center}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+td.wx{white-space:nowrap;font-size:13px}
+.exk{margin:8px 0 4px;font-size:13px;color:var(--tx2)}
+.exk button{border:1px solid var(--line,#e3e2de);background:#fff;border-radius:999px;padding:3px 12px;margin:0 0 0 6px;font-size:13px;cursor:pointer;color:inherit}
+.exk button:hover{background:#f1f1ef}
+.sub{color:var(--tx3);font-size:13px}
+#status{color:var(--tx2);margin:12px 0 4px;font-size:14px}
+#bar{display:flex;align-items:center;gap:10px;margin:10px 0;flex-wrap:wrap}
+#bar input:not([type=checkbox]){width:240px;font-size:14px;padding:8px 10px}
+select{margin-left:8px;background:#fff;border:1px solid var(--line);color:var(--tx);padding:9px 10px;border-radius:6px;font-size:14px;font-family:inherit;outline:none}
+.tag{font-size:12px;padding:1px 8px;border-radius:4px}
+.tag.live{background:var(--hl-red);color:#9f2f2d}
+.tag.tc{background:var(--hl-blue);color:#1f5f7f}
+.src{display:inline-block;font-size:11px;padding:0 6px;border-radius:4px;background:var(--line2);color:var(--tx3);margin-left:6px;vertical-align:1px}
+.pname{max-width:300px;overflow:hidden;text-overflow:ellipsis;color:var(--tx2);font-size:13px}
+tr.upcoming td{opacity:.45}
+.callout{background:var(--hl-yellow);border-radius:6px;padding:12px 16px;margin:12px 0;font-size:13.5px;color:var(--tx2)}
+.callout b{color:var(--tx);font-weight:650}
 </style></head>
 <body><div class="wrap">
-<h1>키워드로 방송 찾아 비교하기 <a href="/" style="font-size:13px;color:var(--accent);text-decoration:none;margin-left:8px">← 주간 편성표</a></h1>
-<p class="sub">편성 추정 매출은 방송이 끝나고 집계되기까지 시간이 걸려 "집계 전"으로 뜰 수 있습니다 — 검색에 걸린 방송을 최신순으로 전부 나열합니다. 기본은 홈쇼핑모아 호출 1회이고, 기간을 넓히면 주마다 1회씩 늘어납니다 — 상품명 필터로 같은 제품만 남겨 비교하세요. 2개 이상 선택하면 비교할 수 있고, 채널이 많을수록(3개 이상) 어느 채널이 무엇을 밀었는지 더 뚜렷하게 갈립니다.</p>
-<form id="f"><input id="kw" placeholder="예: 일월, 쿡셀 큐브팬" required>
+<h1>키워드로 방송 찾아 비교하기 <a href="/">← 주간 편성표</a></h1>
+<p class="lead">검색에 걸린 방송을 최신순으로 전부 나열합니다. 상품명 필터로 같은 제품만 남긴 뒤 2개 이상 고르면 비교 리포트가 만들어지고, 채널이 많을수록(3개 이상) 어느 채널이 무엇을 밀었는지 더 뚜렷하게 갈립니다.</p>
+<form id="f"><input id="kw" placeholder="__KW_PLACEHOLDER__" required>
 <select id="weeks" title="기간을 넓힐수록 홈쇼핑모아 호출이 늘어납니다(1 + 주 수)">
 <option value="0" selected>기본 (호출 1회)</option><option value="2">+최근 2주 (호출 3회)</option>
 <option value="4">+최근 4주 (호출 5회)</option><option value="8">+최근 8주 (호출 9회)</option></select>
 <button type="submit">검색</button></form>
+<div class="exk">__KW_CHIPS__</div>
 <div id="status"></div>
 <div id="bar" style="display:none">
-  <input id="nameFilter" placeholder="상품명 필터 (예: 카본, 블로썸)" style="width:240px;font-size:14px;padding:8px 10px">
+  <input id="nameFilter" placeholder="상품명 필터 (예: 패키지, 18박스)">
   <label class="sub"><input type="checkbox" id="subOnly" checked> 방영 전 제외</label>
   <select id="typeFilter">
     <option value="">전체</option><option value="라이브">라이브만</option><option value="T커머스">T커머스만</option>
@@ -417,6 +569,9 @@ function updateBar() {
   cmpBtn.disabled = n < 2;
 }
 
+document.querySelectorAll('.exk button').forEach(b => b.addEventListener('click', () => {
+  document.getElementById('kw').value = b.dataset.k; f.requestSubmit();
+}));
 f.addEventListener('submit', async (e) => {
   e.preventDefault();
   const kw = document.getElementById('kw').value.trim();
@@ -439,12 +594,19 @@ f.addEventListener('submit', async (e) => {
       <td>${b.channel_name}${b.has_subtitle === false ? ' <span class="sub">· 자막 없음</span>' : b.subtitle_opened === false ? ' <span class="sub">· 🔒 자막 잠김</span>' : ''}</td>
       <td>${b.duration_min ?? ''}분</td>
       <td class="pname" title="${esc(b.product_name)}">${esc(b.product_name)}</td>
-      <td class="num">${b.upcoming ? '<span class="sub">방영 예정</span>' : b.revenue != null ? b.revenue.toLocaleString() + '원' : '<span class="sub">집계 전</span>'}</td>
+      <td class="num">${b.upcoming ? '<span class="sub">방영 예정</span>' : b.revenue != null ? b.revenue.toLocaleString() + '원<span class="src">' + esc(b.revenue_source || '') + '</span>' : '<span class="sub">–</span>'}</td>
       <td class="num">${b.revenue_per_weighted_min != null ? b.revenue_per_weighted_min.toLocaleString() + '원' : '<span class="sub">–</span>'}</td>
+      <td class="wx">${b.weather ? esc(b.weather.name) + '<span class="sub"> ' + b.weather.hi.toFixed(1) + '° / ' + b.weather.lo.toFixed(1) + '°</span>' : '<span class="sub">–</span>'}</td>
+      <td class="num">${b.weather ? (b.weather.rain > 0 ? '<b>' + b.weather.rain.toFixed(1) + 'mm</b>' : '0mm') : '<span class="sub">–</span>'}</td>
     </tr>`).join('');
-    out.innerHTML = `<div class="panel"><table>
+    const srcs = [...new Set(lastItems.filter(b => b.revenue != null).map(b => b.revenue_source))];
+    const notes = {'라방바': '<b>라방바 추정치</b>입니다 — 실제 매출과 다르며 부정확합니다. 사·방송 간 상대 비교와 추세 참고용으로만 보세요. 라방바에 없는 방송(T커머스 등)은 비워 둡니다.',
+                   '홈쇼핑모아': '<b>홈쇼핑모아 편성 추정치</b>입니다 — 실제 매출과 다릅니다.'};
+    const callout = srcs.length ? '<div class="callout">편성 매출은 ' + srcs.map(s => notes[s] || esc(s)).join(' / ') + '</div>' : '';
+    out.innerHTML = callout + `<div class="panel"><table>
       <thead><tr><th></th><th>방송 시작</th><th>구분</th><th>홈쇼핑사</th><th>편성</th><th>상품명</th><th>편성 추정 매출</th>
-      <th title="홈쇼핑모아 추정매출/가중분">분당주문액</th></tr></thead>
+      <th title="편성 추정 매출 ÷ 가중분(시간대 수요 가중)">분당주문액</th>
+      <th title="기상청 서울 관측 · 일 단위(같은 날 방송은 같은 값) · 최고/최저기온">날씨</th><th title="기상청 서울 관측 · 일 강수량">강수량</th></tr></thead>
       <tbody>${rows}</tbody></table></div>`;
     bar.style.display = '';
     applyFilter();
@@ -502,7 +664,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(404, "리포트를 찾을 수 없습니다".encode("utf-8"), "text/plain; charset=utf-8")
                     return
                 with open(path, encoding="utf-8") as f:
-                    self._send(200, f.read().encode("utf-8"), "text/html; charset=utf-8")
+                    self._send(200, with_back_button(f.read()).encode("utf-8"), "text/html; charset=utf-8")
             elif parsed.path == "/split":
                 # 두 리포트를 좌우로 나란히(예: 1안 키워드 집계 | 2안 정독 분석)
                 # 주소에 리포트 이름이 없거나 틀리면 가장 최근 1안·2안을 자동으로 고른다
@@ -540,7 +702,13 @@ iframe{{width:100%;height:100%;border:0;background:#fff}}iframe+iframe{{border-l
                 with open(WEEKLY_HTML_PATH, encoding="utf-8") as f:
                     self._send(200, f.read().encode("utf-8"), "text/html; charset=utf-8")
             elif parsed.path == "/search":
-                self._send(200, INDEX_HTML.encode("utf-8"), "text/html; charset=utf-8")
+                # 검색 예시 = 지금 조회할 수 있는 보관함 상품만(폴더를 추가하면 자동으로 늘어난다)
+                kws = library.searchable_keywords()
+                chips = ("조회 가능 " + "".join(
+                    f'<button type="button" data-k="{html.escape(k)}">{html.escape(k)}</button>' for k in kws)) if kws else ""
+                page = (INDEX_HTML.replace("__KW_PLACEHOLDER__", "예: " + ", ".join(kws) if kws else "상품명 키워드")
+                        .replace("__KW_CHIPS__", chips))
+                self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
             elif parsed.path == "/api/week":
                 today = datetime.now(KST).date()
                 start = qs.get("start") or today.isoformat()
@@ -557,7 +725,9 @@ iframe{{width:100%;height:100%;border:0;background:#fff}}iframe+iframe{{border-l
                     self._send(400, b'{"error":"keyword required"}', "application/json")
                     return
                 weeks = int((urllib.parse.parse_qs(parsed.query).get("weeks") or ["0"])[0])
-                out = search_broadcasts(self.client, keyword, weeks=max(0, min(weeks, 8)))
+                out = None if self.client.cfg.network_enabled else search_library(keyword)
+                if out is None:
+                    out = search_broadcasts(self.client, keyword, weeks=max(0, min(weeks, 8)))
                 out["usage"] = self.client.guard.status()
                 self._send_json(out)
             else:
@@ -587,7 +757,15 @@ iframe{{width:100%;height:100%;border:0;background:#fff}}iframe+iframe{{border-l
                 body = self.rfile.read(length).decode("utf-8")
                 form = {k: v[0] for k, v in urllib.parse.parse_qs(body).items()}
                 items = json.loads(form.get("items", "[]"))
-                html_out = build_compare_html(self.client, items=items, keyword=form.get("keyword", ""))
+                keyword = form.get("keyword", "")
+                if items and all(it.get("local_file") for it in items):
+                    html_out = build_library_compare_html(items=items, keyword=keyword)
+                    name = save_report(html_out, keyword or "report")
+                    self.send_response(303)
+                    self.send_header("Location", "/report/" + urllib.parse.quote(name))
+                    self.end_headers()
+                    return
+                html_out = build_compare_html(self.client, items=items, keyword=keyword)
                 self._send(200, html_out.encode("utf-8"), "text/html; charset=utf-8")
             else:
                 self._send(404, b"not found", "text/plain")

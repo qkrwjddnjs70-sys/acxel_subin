@@ -34,7 +34,7 @@ _LABEL_MAX = 6
 
 # 파일명·입력의 채널 표기 → 내부 채널 코드
 CHANNEL_ALIASES = {
-    "GS": "gsshop", "GS샵": "gsshop", "GSSHOP": "gsshop",
+    "GS": "gsshop", "GS샵": "gsshop", "GSSHOP": "gsshop", "GS SHOP": "gsshop",
     "GSMY": "gsmyshop", "GS마이샵": "gsmyshop", "마이샵": "gsmyshop",
     "HD": "hmall", "현대": "hmall", "현대홈쇼핑": "hmall", "HMALL": "hmall",
     "HD+": "hmallplus", "현대+": "hmallplus", "현대홈쇼핑+샵": "hmallplus",
@@ -53,7 +53,39 @@ CHANNEL_ALIASES = {
 
 def channel_code(token: str) -> str:
     t = (token or "").strip()
-    return CHANNEL_ALIASES.get(t.upper(), CHANNEL_ALIASES.get(t, t.lower()))
+    return CHANNEL_ALIASES.get(t.upper(), CHANNEL_ALIASES.get(t, CHANNEL_ALIASES.get(t.upper().replace(" ", ""), t.lower())))
+
+
+_DATE_KO = re.compile(r"^(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일$")
+_PRICE = re.compile(r"^([\d,]+)원$")
+_PAGE_TITLE = re.compile(r"\|\s*홈쇼핑모아 DataHub\s*$")
+
+
+def page_meta(text: str) -> dict | None:
+    """데이터허브 방송 상세 화면을 통째로 복사한 텍스트에서 방송 정보를 뽑는다.
+
+    화면 구성: 상품명 / 채널(GS SHOP·롯데홈쇼핑…) / 2026년 10월 27일 / 07:15 ~ 08:15 / 브랜드 / 상품명 / 459,000원
+    못 찾으면 None(파일명 규칙으로 대신한다).
+    """
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    for i in range(1, len(lines) - 1):
+        d, r = _DATE_KO.match(lines[i]), _RANGE.match(lines[i + 1])
+        if not (d and r):
+            continue
+        day = datetime(int(d.group(1)), int(d.group(2)), int(d.group(3)))
+        start = day + timedelta(hours=int(r.group(1)), minutes=int(r.group(2)))
+        end = day + timedelta(hours=int(r.group(3)), minutes=int(r.group(4)))
+        if end <= start:  # 자정을 넘기는 편성
+            end += timedelta(days=1)
+        price = next((int(m.group(1).replace(",", "")) for ln in lines[i + 2:i + 8] if (m := _PRICE.match(ln))), None)
+        return {
+            "channel": channel_code(lines[i - 1]),
+            "product_name": lines[i - 2] if i >= 2 else "",
+            "start_datetime": start.isoformat(),
+            "end_datetime": end.isoformat(),
+            "price": price,
+        }
+    return None
 
 
 def parse_filename(path: str) -> dict:
@@ -90,6 +122,18 @@ def parse_copy_text(
 ) -> Broadcast:
     lines = [ln.strip() for ln in text.splitlines()]
     lines = [ln for ln in lines if ln]
+    # Ctrl+A 로 통째로 복사하면 자막 앞에 메뉴·방송 정보·AI 하이라이트(시각이 붙어 있다)가,
+    # 맨 끝에 페이지 제목("… | 홈쇼핑모아 DataHub")이 딸려 온다.
+    # '자막에서 찾기'(자막 탭 머리)가 있으면 그 뒤 첫 분 블록 머리말부터, 없으면 첫 시각 줄부터 읽는다.
+    lines = [ln for ln in lines if not _PAGE_TITLE.search(ln)]
+    anchor = next((k for k, ln in enumerate(lines) if ln == "자막에서 찾기"), None)
+    if anchor is not None:
+        first = next((k for k in range(anchor, len(lines)) if _PROMO.match(lines[k])), None)
+    else:
+        first = next((k for k, ln in enumerate(lines)
+                      if _TS.match(ln) or _TS_INLINE.match(ln) or _PROMO.match(ln)), None)
+    if first:
+        lines = lines[first:]
 
     segments: list[Segment] = []
     rhythm: list[dict] = []

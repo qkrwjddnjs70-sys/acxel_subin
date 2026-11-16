@@ -152,7 +152,7 @@ def _summary_prose(res: ComparisonResult, colors: dict[str, str]) -> str:
                 s += f"(판매 {p['sales_count']:,}건)"
             if p["revenue_per_weighted_min"] is not None:
                 s += (
-                    ", <span title='홈쇼핑모아 추정매출/가중분'>분당주문액</span> "
+                    ", <span title='추정 매출 ÷ 가중분'>분당주문액</span> "
                     f"{p['revenue_per_weighted_min']:,.0f}원"
                 )
             s += " 기록으로, "
@@ -172,7 +172,7 @@ def _summary_prose(res: ComparisonResult, colors: dict[str, str]) -> str:
     return "\n".join(paras) + (
         "\n<p class=\"sub\">· 강점/약점축은 판촉 수단(혜택·콜유도)을 뺀 제품 소구축 중 채널 간 편차가 큰 것만 뽑습니다."
         " 방송이 2개뿐이면 한쪽이 0회인 축은 지수가 항상 200으로 찍히니, 정확한 크기는 2번 소구축 비교표(분당 횟수)를 참고하세요."
-        " · <b title='홈쇼핑모아 추정매출/가중분'>분당주문액</b>은 편성 추정 매출을 방송 길이(분)로 그냥 나눈 게 아니라, 그 방송이 깔고 있던 분들의"
+        " · <b title='추정 매출 ÷ 가중분'>분당주문액</b>은 편성 추정 매출을 방송 길이(분)로 그냥 나눈 게 아니라, 그 방송이 깔고 있던 분들의"
         " 시간대별 수요 가중치(일요일 새벽 1시대는 평균의 약 20~30%대, 저녁 황금시간대는 100%를 넘김)를"
         " 합산한 '가중 분(weighted minutes)'으로 나눈 값입니다. 새벽 방송이 매출이 적은 건 당연한데 그걸 그냥"
         " 분당으로 비교하면 불리하게 보이는 걸 보정합니다.</p>"
@@ -189,7 +189,7 @@ def _axis_table_grid(
     head = "".join(
         f"<th style='text-align:center;color:{colors[b]}'>{_e(name[b])}"
         + (
-            f"<div class='sub' style='font-weight:400' title='홈쇼핑모아 추정매출/가중분'>"
+            f"<div class='sub' style='font-weight:400' title='추정 매출 ÷ 가중분'>"
             f"분당주문액 {rpwm[b]:,.0f}원</div>"
             if rpwm.get(b) is not None else ""
         )
@@ -452,7 +452,7 @@ def _broadcast_info_table(res: ComparisonResult, colors: dict[str, str]) -> str:
     table = f"""<div class="scroll"><table>
 <thead><tr><th>홈쇼핑사</th><th>구분</th><th>방송 시작</th><th>편성</th>
 <th title="시간대 가중치를 합산한 분 — 라이브/T커머스 가중치 표가 다름">가중분</th><th>모델명</th><th>편성 추정 매출</th>
-<th title="홈쇼핑모아 추정매출/가중분">분당주문액</th></tr></thead>
+<th title="추정 매출 ÷ 가중분">분당주문액</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table></div>"""
 
     # 한눈에 비교: 지표마다 최댓값=100% 막대

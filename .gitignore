@@ -22,3 +22,6 @@ out/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# 방송 보관함(데이터허브 자막 복사본) — 로컬에만 둔다
+demo_library/

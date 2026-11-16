@@ -312,7 +312,8 @@ def analyze(
 
     rhythm, has_native_rhythm = _compute_rhythm(segs, lex, native_by_minute, bc.duration_sec)
 
-    wmin = weighted_minutes_from_iso(bc.start_datetime, bc.end_datetime, bc.channel)
+    # 매출 출처가 가중분을 직접 준 경우(사내 '아이템 편성 비교' 가중노출분) 그 값을 쓴다. 없으면 시간대 가중치로 계산.
+    wmin = bc.extra.get("weighted_min") or weighted_minutes_from_iso(bc.start_datetime, bc.end_datetime, bc.channel)
     revenue = bc.extra.get("revenue")
     revenue_per_wmin = (revenue / wmin) if revenue is not None and wmin and wmin > 0 else None
 
