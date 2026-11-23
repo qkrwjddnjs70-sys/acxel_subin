@@ -36,7 +36,7 @@ def _download() -> dict:
     if not URL:
         raise RuntimeError("HSBOT_CMPSITE_URL 이 설정되지 않았습니다")
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # 사내 주소: 프록시 안 거침
-    with opener.open(URL, timeout=90) as resp:
+    with opener.open(URL, timeout=15) as resp:
         page = resp.read().decode("utf-8")
     i = page.index("CMP_DATA")
     data, _ = json.JSONDecoder().raw_decode(page[page.index("{", i):])

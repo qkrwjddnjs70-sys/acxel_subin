@@ -14,6 +14,7 @@ import html
 import json
 import os
 import sys
+import threading
 import time
 import traceback
 import urllib.parse
@@ -27,7 +28,7 @@ from .metrics import analyze as analyze_one
 from .models import KST
 from .report import render as render_html
 from .schedule import build_week, build_week_local
-from .sources import cmpsite, labangba, library
+from .sources import cmppage, cmpsite, labangba, library
 from .sources.datahub import DataHubClient, DataHubError
 from .time_weight import LIVE_CHANNELS, weighted_minutes_from_iso
 
@@ -135,12 +136,13 @@ def revenue_note(items: list[dict]) -> str:
     return " ".join(notes.get(s, f"매출 출처: {s}") for s in srcs)
 
 
-def search_library(keyword: str) -> dict | None:
+def search_library(keyword: str, delay: bool = True) -> dict | None:
     """직접 호출이 꺼져 있을 때 방송 보관함(demo_library/<키워드>/)에서 찾는다. 폴더가 없으면 None."""
     folder = library.find_folder(keyword)
     if not folder:
         return None
-    time.sleep(1.2)  # 보관함은 즉시 읽히지만 화면 흐름은 실제 검색과 같게
+    if delay:
+        time.sleep(1.2)  # 보관함은 즉시 읽히지만 화면 흐름은 실제 검색과 같게
     now = datetime.now(KST)
     broadcasts = library.list_broadcasts(folder)
     for b in broadcasts:
@@ -151,8 +153,8 @@ def search_library(keyword: str) -> dict | None:
     return {"keyword": keyword, "broadcasts": broadcasts}
 
 
-BACK_JS = "if(history.length>1&&document.referrer){history.back();}else{location.href='/search';}return false;"
-BACK_BTN = ('<a class="hb-back" href="/search" onclick="' + BACK_JS + '" title="이전 화면으로(없으면 방송 검색으로)">← 뒤로</a>'
+BACK_JS = "if(history.length>1&&document.referrer){history.back();}else{location.href='/';}return false;"
+BACK_BTN = ('<a class="hb-back" href="/search" onclick="' + BACK_JS + '" title="이전 화면으로(없으면 시작 화면으로)">← 뒤로</a>'
             '<style>.hb-back{position:absolute;top:12px;left:12px;z-index:1000;background:#fff;color:#37352f;border:1px solid #e3e2de;'
             'border-radius:999px;padding:5px 14px;font:600 13px/1.4 Pretendard,-apple-system,sans-serif;text-decoration:none;'
             'box-shadow:0 1px 3px rgba(0,0,0,.08)}.hb-back:hover{background:#f1f1ef}</style>')
@@ -173,7 +175,7 @@ def tabbed_report(html_2an: str, html_1an: str) -> str:
     """2안(소구 문맥 분류)과 1안(키워드 집계)을 탭 하나로. 처음엔 2안을 보여준다."""
     import html as _h
     return f"""<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>방송 비교</title><style>
+<title>방송 분석</title><style>
 html,body{{margin:0;height:100%;background:#fff;font-family:Pretendard,-apple-system,sans-serif}}
 .tabs{{display:flex;gap:4px;padding:8px 16px 0;border-bottom:1px solid #e3e2de;background:#fbfbfa;height:40px;box-sizing:border-box}}
 .tabs button{{border:0;background:none;padding:6px 14px;font-size:14px;color:#787774;cursor:pointer;border-radius:6px 6px 0 0;font-family:inherit}}
@@ -195,11 +197,14 @@ def build_library_compare_html(*, items: list[dict], keyword: str) -> str:
     folder = library.find_folder(keyword)
     if not folder:
         raise DataHubError(f"'{keyword}' 보관함 폴더가 없습니다(demo_library/).")
+    items = sorted(items, key=lambda it: it.get("channel") != "gsshop")  # 2026-11-19: GS가 항상 맨 앞(왼쪽)
     pre_name = library.prebuilt_report_name(folder, [it["local_file"] for it in items])
     if pre_name:
         pre = library.prebuilt_report(folder, [it["local_file"] for it in items])
         second = library.prebuilt_2an(folder, pre_name)
         return tabbed_report(second, pre) if second else pre
+    if len(items) < 2:  # 미리 만든 분석 리포트가 없는 단일 방송
+        raise DataHubError("이 방송(조합)의 분석 리포트는 아직 준비되지 않았습니다. 미리 준비된 방송 조합만 분석할 수 있어요.")
     broadcasts = []
     for it in items:
         bc = library.load(folder, it)
@@ -215,7 +220,7 @@ def build_library_compare_html(*, items: list[dict], keyword: str) -> str:
     lex = load_combined(default_lexicons(product))
     metrics = [analyze_one(bc, lex) for bc in broadcasts]
     res = compare_broadcasts(broadcasts, metrics)
-    return render_html(res, title=f"{product} — 홈쇼핑 채널별 판매 화법 비교",
+    return render_html(res, title=f"{product} — 홈쇼핑 채널별 판매 화법 분석",
                        source_note=f"방송 {len(broadcasts)}건 · 사전 {lex.name} · {revenue_note(items)}")
 
 
@@ -423,7 +428,7 @@ def build_text_compare_html(payload: dict) -> str:
     note = f"자막 {len(broadcasts)}건 업로드 · 사전 {lex.name} · 문구 규칙 {len(lex.phrases)}개"
     if not all(bc.extra.get("time_known") for bc in broadcasts):
         note += " · 방송 시작 시각이 비어 있는 방송은 가중분·분당주문액이 정확하지 않습니다"
-    return render_html(res, title=f"{product} — 홈쇼핑 판매 화법 비교", source_note=note)
+    return render_html(res, title=f"{product} — 홈쇼핑 판매 화법 분석", source_note=note)
 
 
 def build_compare_html(client: DataHubClient, *, items: list[dict], keyword: str) -> str:
@@ -452,14 +457,14 @@ def build_compare_html(client: DataHubClient, *, items: list[dict], keyword: str
     note = f"broadcast_id={ids} · {revenue_note(items)}"
     if skipped:
         note += " · 제외: " + " / ".join(skipped)
-    return render_html(res, title=f"{product_name} — 홈쇼핑 채널별 판매 화법 비교" if product_name else None,
+    return render_html(res, title=f"{product_name} — 홈쇼핑 채널별 판매 화법 분석" if product_name else None,
                        source_note=note)
 
 
 INDEX_HTML = """<!doctype html>
 <html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>홈쇼핑 채널별 화법 비교</title>
+<title>홈쇼핑 방송 분석</title>
 <style>
 :root{--tx:#37352f;--tx2:rgba(55,53,47,.72);--tx3:rgba(55,53,47,.5);--line:#e9e9e7;--line2:#f1f1ef;--panel2:#f7f6f3;
   --accent:#2383e2;--hl-yellow:#fbf3db;--hl-blue:#e7f3f8;--hl-red:#fdebec}
@@ -505,7 +510,7 @@ tr.upcoming td{opacity:.45}
 .callout b{color:var(--tx);font-weight:650}
 </style></head>
 <body><div class="wrap">
-<h1>키워드로 방송 찾아 비교하기 <a href="/">← 주간 편성표</a></h1>
+<h1>키워드로 방송 찾아 분석하기 <a href="/">← 시작 화면</a></h1>
 <p class="lead">검색에 걸린 방송을 최신순으로 전부 나열합니다. 상품명 필터로 같은 제품만 남긴 뒤 2개 이상 고르면 비교 리포트가 만들어지고, 채널이 많을수록(3개 이상) 어느 채널이 무엇을 밀었는지 더 뚜렷하게 갈립니다.</p>
 <form id="f"><input id="kw" placeholder="__KW_PLACEHOLDER__" required>
 <select id="weeks" title="기간을 넓힐수록 홈쇼핑모아 호출이 늘어납니다(1 + 주 수)">
@@ -521,7 +526,7 @@ tr.upcoming td{opacity:.45}
     <option value="">전체</option><option value="라이브">라이브만</option><option value="T커머스">T커머스만</option>
   </select>
   <span id="selCount" class="sub"></span>
-  <button id="cmp" disabled>선택한 방송 비교</button>
+  <button id="cmp" disabled>선택한 방송 분석</button>
 </div>
 <div id="out"></div>
 </div>
@@ -630,12 +635,54 @@ cmpBtn.addEventListener('click', () => {
 class Handler(BaseHTTPRequestHandler):
     client: DataHubClient  # set by run()
 
-    def _send(self, status: int, body: bytes, content_type: str) -> None:
+    def _send(self, status: int, body: bytes, content_type: str, headers: dict | None = None) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
+
+    def _message(self, title: str, body_html: str) -> None:
+        """안내 화면(분석할 수 없을 때). 시작 화면으로 돌아가는 링크가 붙는다."""
+        avail = "".join(f"<li>{html.escape(k)}</li>" for k in library.searchable_keywords())
+        page = ("<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+                f"<title>{html.escape(title)}</title><body style=\"font-family:Pretendard,-apple-system,sans-serif;max-width:640px;"
+                "margin:60px auto;padding:0 20px;color:#37352f;line-height:1.7\"><p><a href='/' style='color:#787774;text-decoration:none'>← 시작 화면</a></p>"
+                f"<h2>{html.escape(title)}</h2>{body_html}<h3 style='margin-top:28px'>지금 분석할 수 있는 상품</h3><ul>{avail}</ul>"
+                "<p style='color:#787774;font-size:13px'>자막이 있는 방송만 분석할 수 있어요. 시작 화면에서 ‘자막 있음’으로 표시된 방송을 골라 주세요.</p></body>")
+        self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _from_cmp(self, qs: dict) -> None:
+        """시작 화면(사내 편성 비교)에서 고른 방송 → 보관함 방송에 맞춰 우리 앱의 분석 리포트로."""
+        picks = [p for p in (qs.get("picks") or "").split(",") if p][:6]
+        if len(picks) < 1:
+            self._message("분석할 방송을 골라 주세요", "<p>시작 화면에서 ‘자막 있음’ 방송을 체크한 뒤 ‘방송 분석하기’를 눌러 주세요.</p>")
+            return
+        res = cmppage.resolve(picks)
+        if res["missing"]:
+            names = {"gsshop": "GS샵", "hmall": "현대홈쇼핑", "lotteimall": "롯데홈쇼핑", "cjmall": "CJ온스타일"}
+            rows = "".join(
+                f"<li>{html.escape(names.get(m.get('channel'), m.get('code', '?')))} {html.escape(m.get('day', ''))} {html.escape(m.get('start', ''))}"
+                f"{' — ' + html.escape(m['why']) if m.get('why') else ''}</li>" for m in res["missing"])
+            self._message("우리 앱에 자막이 없는 방송이 있어요", f"<p>고른 방송 중 아래 방송은 방송 보관함에 자막이 없어 분석할 수 없습니다.</p><ul>{rows}</ul>")
+            return
+        if len(res["folders"]) != 1:
+            self._message("같은 상품의 방송끼리만 함께 분석할 수 있어요", "<p>서로 다른 상품의 방송이 섞여 있습니다. 한 상품(예: 세포랩)의 방송만 골라 주세요.</p>")
+            return
+        folder_name, files = next(iter(res["folders"].items()))
+        data = search_library(folder_name, delay=False) or {"broadcasts": []}
+        chosen = [b for b in data["broadcasts"] if b["local_file"] in set(files)]
+        try:
+            html_out = build_library_compare_html(items=chosen, keyword=folder_name)
+        except DataHubError as ex:
+            self._message("이 조합은 아직 분석할 수 없어요", f"<p>{html.escape(str(ex))}</p>")
+            return
+        name = save_report(html_out, folder_name)
+        self.send_response(303)
+        self.send_header("Location", "/report/" + urllib.parse.quote(name))
+        self.end_headers()
 
     def _send_json(self, obj) -> None:
         self._send(200, json.dumps(obj, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
@@ -653,10 +700,25 @@ class Handler(BaseHTTPRequestHandler):
         qs = {k: v[0] for k, v in urllib.parse.parse_qs(parsed.query).items()}
         as_json = parsed.path.startswith("/api/")
         try:
-            if parsed.path in ("/", "/compare"):
-                # 시작 화면: 자막 업로드 → 비교 리포트(크롤링 없이 쓰는 정식 경로)
+            if parsed.path == "/":
+                # 시작 화면: 사내 '아이템 편성 비교' 페이지(캐시) — 자막 있음 방송을 골라 비교하기 → /from-cmp
+                kind, raw, gz = cmppage.page()
+                if kind == "ready":
+                    if "gzip" in (self.headers.get("Accept-Encoding") or ""):
+                        self._send(200, gz, "text/html; charset=utf-8", {"Content-Encoding": "gzip"})
+                    else:
+                        self._send(200, raw, "text/html; charset=utf-8")
+                elif kind == "loading":
+                    self._send(200, cmppage.LOADING_HTML.encode("utf-8"), "text/html; charset=utf-8")
+                else:  # 페이지 주소도 캐시도 없으면 예전 시작 화면(자막 업로드)
+                    with open(COMPARE_HTML_PATH, encoding="utf-8") as f:
+                        self._send(200, f.read().encode("utf-8"), "text/html; charset=utf-8")
+            elif parsed.path == "/compare":
+                # 자막 업로드 → 비교 리포트(크롤링 없이 쓰는 정식 경로)
                 with open(COMPARE_HTML_PATH, encoding="utf-8") as f:
                     self._send(200, f.read().encode("utf-8"), "text/html; charset=utf-8")
+            elif parsed.path == "/from-cmp":
+                self._from_cmp(qs)
             elif parsed.path.startswith("/report/"):
                 name = os.path.basename(urllib.parse.unquote(parsed.path[len("/report/"):]))
                 path = os.path.join(REPORT_DIR, name)
@@ -680,7 +742,7 @@ class Handler(BaseHTTPRequestHandler):
 
                 left = urllib.parse.quote(_pick(qs.get("l", ""), False))
                 right = urllib.parse.quote(_pick(qs.get("r", ""), True))
-                page = f"""<!doctype html><meta charset="utf-8"><title>1안 · 2안 비교</title>
+                page = f"""<!doctype html><meta charset="utf-8"><title>1안 · 2안 분석</title>
 <style>html,body{{margin:0;height:100%;font-family:Pretendard,'Malgun Gothic',sans-serif;background:#f7f6f3}}
 .top{{display:grid;grid-template-columns:1fr 1fr;height:34px;border-bottom:1px solid #e9e9e7;background:#fff}}
 .top div{{padding:7px 14px;font-size:13px;font-weight:650;color:#37352f}}.top div+div{{border-left:1px solid #e9e9e7}}
@@ -696,7 +758,7 @@ iframe{{width:100%;height:100%;border:0;background:#fff}}iframe+iframe{{border-l
                 rows = "".join(f'<li><a href="/report/{urllib.parse.quote(n)}">{html.escape(n[:-5])}</a></li>' for n in names)
                 page = ('<!doctype html><meta charset="utf-8"><title>지난 리포트</title>'
                         '<body style="font-family:Malgun Gothic,sans-serif;padding:20px;background:#f7f8fa">'
-                        f'<h2>지난 비교 리포트</h2><p><a href="/">← 방송 비교</a> · <a href="/split">최근 1안·2안 나란히 보기</a></p><ul>{rows or "<li>아직 없습니다</li>"}</ul>')
+                        f'<h2>지난 분석 리포트</h2><p><a href="/">← 방송 분석</a> · <a href="/split">최근 1안·2안 나란히 보기</a></p><ul>{rows or "<li>아직 없습니다</li>"}</ul>')
                 self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
             elif parsed.path == "/weekly":
                 with open(WEEKLY_HTML_PATH, encoding="utf-8") as f:
@@ -783,6 +845,15 @@ def run(host: str = "127.0.0.1", port: int = 8765) -> None:
     client = DataHubClient()
     Handler.client = client
     server = ThreadingHTTPServer((host, port), Handler)
+    cmppage.refresh_async()  # 시작 화면 데이터(사내 편성 비교)가 낡았으면 뒤에서 새로 받는다
+
+    def _warm() -> None:  # 첫 비교 요청이 사내 매출 데이터를 기다리느라 느려지지 않게 미리 읽어 둔다
+        for mod in (cmpsite, labangba):
+            try:
+                mod._load()
+            except Exception:  # noqa: BLE001
+                pass
+    threading.Thread(target=_warm, daemon=True, name="warm-sales").start()
     print(f"hsbot webapp: http://{host}:{port}  (Ctrl+C로 종료)")
     try:
         server.serve_forever()

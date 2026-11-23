@@ -502,7 +502,7 @@ def cmd_devtools(args) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="hsbot", description="홈쇼핑 방송 화법 비교 분석기")
+    p = argparse.ArgumentParser(prog="hsbot", description="홈쇼핑 방송 분석봇 — 방송 화법·소구 분석기")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     u = sub.add_parser("url", help="DataHub URL에서 수집 파라미터 추출")

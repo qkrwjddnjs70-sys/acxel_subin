@@ -39,6 +39,21 @@ def _squash(s: str) -> str:
     return re.sub(r"\s+", "", s or "").upper()
 
 
+def all_broadcasts() -> list[tuple[str, dict]]:
+    """보관함의 모든 폴더 → (폴더 이름, 방송). 비교 화면에서 '자막 있음'을 맞출 때 쓴다. 빈 자막 파일(1KB 이하)은 뺀다."""
+    out = []
+    if not os.path.isdir(ROOT):
+        return out
+    for name in sorted(os.listdir(ROOT)):
+        path = os.path.join(ROOT, name)
+        if not os.path.isdir(path):
+            continue
+        for b in list_broadcasts(path):
+            if os.path.getsize(os.path.join(path, os.path.basename(b["local_file"]))) > 1000:
+                out.append((name, b))
+    return out
+
+
 def searchable_keywords() -> list[str]:
     """검색 예시로 보여줄 보관함 키워드 — 비교할 수 있게 방송(자막 파일)이 2개 이상 든 폴더만."""
     if not os.path.isdir(ROOT):
@@ -93,7 +108,7 @@ def list_broadcasts(folder: str) -> list[dict]:
     info = _read_info(folder)
     out = []
     for fn in os.listdir(folder):
-        if not fn.lower().endswith(".txt") or fn.startswith("리포트") and fn.endswith("_대상.txt"):
+        if not fn.lower().endswith(".txt") or fn.startswith(("리포트", "분석")) and fn.endswith("_대상.txt"):
             continue
         m = _NAME.match(os.path.splitext(fn)[0])
         row = info.get(fn) or info.get(os.path.splitext(fn)[0]) or {}
@@ -180,7 +195,7 @@ def prebuilt_report_name(folder: str, picked_files: list[str]) -> str | None:
     """
     picked = set(picked_files)
     for fn in sorted(os.listdir(folder)):
-        if not (fn.startswith("리포트") and fn.endswith(".html")):
+        if not (fn.startswith(("리포트", "분석")) and fn.endswith(".html")):  # 분석*.html = 2안만 있는 분석 리포트(1안 탭 없음)
             continue
         target_path = os.path.join(folder, fn[:-5] + "_대상.txt")
         if os.path.exists(target_path):

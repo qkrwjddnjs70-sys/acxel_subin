@@ -1,4 +1,4 @@
-# 🏪 홈쇼핑 채널별 화법 비교 봇 (Homeshopping Compare BOT)
+# 🏪 홈쇼핑 방송 분석 봇 (Homeshopping Analysis BOT)
 
 **홈쇼핑 방송의 판매 전략을 AI로 분석하고 채널 간 차이를 비교하는 도구**
 
